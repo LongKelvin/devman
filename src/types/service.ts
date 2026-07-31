@@ -28,8 +28,8 @@ export interface RestartConfig {
 }
 
 /**
- * Health check definition. Only the process-liveness strategy is implemented
- * today; the shape leaves room for HTTP/TCP probes without a breaking change.
+ * Health check definition. Three strategies are supported: process-liveness
+ * (the default), TCP connect, and HTTP GET — selected by {@link type}.
  */
 export interface HealthCheckConfig {
   /** Strategy used to determine service health. */
