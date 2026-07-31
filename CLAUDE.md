@@ -29,6 +29,7 @@ Do not redesign the architecture. Extend it only where implementation details ar
 ## Phases
 
 ### Phase 1
+
 - Project bootstrap
 - CLI
 - Configuration loader
@@ -36,19 +37,23 @@ Do not redesign the architecture. Extend it only where implementation details ar
 - Runtime directories
 
 ### Phase 2
+
 - Daemon
 - IPC
 - Runtime state
 - Graceful shutdown
 
 ### Phase 3
+
 - Process manager
 - Start/stop/restart
 - Crash detection
 - Dependency ordering
 
 ### Phase 4
+
 Implement:
+
 - start-dev
 - --status
 - --stop
@@ -58,6 +63,7 @@ Implement:
 - doctor
 
 ### Phase 5
+
 - Tests
 - Documentation
 - Cleanup

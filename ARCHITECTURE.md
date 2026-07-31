@@ -1,9 +1,11 @@
 # Dev Manager Architecture
 
 ## Vision
+
 Dev Manager is a lightweight local development service manager inspired by PM2 and systemd. It manages local workspace services through a background daemon and a CLI.
 
 ## Goals
+
 - Start/stop/restart development services.
 - Centralized configuration.
 - Persistent daemon.
@@ -53,26 +55,35 @@ dev-manager/
 ```
 
 ## Components
+
 ### CLI
+
 Thin client that communicates with the daemon.
 
 ### Daemon
+
 Owns every child process and exposes IPC commands.
 
 ### Process Manager
+
 Starts, stops, restarts and monitors services.
 
 ### Runtime State
+
 Stores daemon PID, state and runtime metadata.
 
 ### Logger
+
 Writes stdout/stderr to per-service log files and supports live streaming.
 
 ### IPC
+
 Communication between CLI and daemon.
 
 ### Event Bus
+
 Internal events:
+
 - ServiceStarted
 - ServiceStopped
 - ServiceFailed
@@ -84,6 +95,7 @@ Internal events:
 `services.json`
 
 Each service defines:
+
 - id
 - name
 - cwd

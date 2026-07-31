@@ -4,9 +4,11 @@ A lightweight local development service manager, inspired by PM2 and systemd,
 but focused on the services you run while developing. A background **daemon**
 owns your dev processes; a thin **CLI** (`start-dev`) talks to it over IPC.
 
-> Status: **Phase 1** — project bootstrap, configuration, logging, runtime
-> scaffolding and the CLI skeleton. The daemon and process management land in
-> subsequent phases (see [ARCHITECTURE.md](./ARCHITECTURE.md)).
+> Status: **Phase 2** — the background daemon is live. It owns runtime state,
+> serves the CLI over a Unix-socket IPC channel (`ping`/`status`/`shutdown`),
+> manages its own PID file and shuts down gracefully. `start-dev` auto-spawns a
+> detached daemon; `--status` and `--stop` work today. Per-service process
+> supervision (`start`/`restart`/`--log`/`--info`) lands in Phase 3.
 
 ## Why
 
@@ -64,15 +66,15 @@ Requires Node.js 20+.
 
 ## Commands
 
-| Command                    | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `start-dev`                | Start all enabled services (via daemon)  |
-| `start-dev --status`       | Show status of all services              |
-| `start-dev --stop`         | Stop all services and the daemon         |
-| `start-dev --restart`      | Restart all services                     |
-| `start-dev --log <svc>`    | Stream logs for a service                |
-| `start-dev --info <svc>`   | Show detailed info for a service         |
-| `start-dev doctor`         | Diagnose configuration and daemon health |
+| Command                  | Description                              |
+| ------------------------ | ---------------------------------------- |
+| `start-dev`              | Start all enabled services (via daemon)  |
+| `start-dev --status`     | Show status of all services              |
+| `start-dev --stop`       | Stop all services and the daemon         |
+| `start-dev --restart`    | Restart all services                     |
+| `start-dev --log <svc>`  | Stream logs for a service                |
+| `start-dev --info <svc>` | Show detailed info for a service         |
+| `start-dev doctor`       | Diagnose configuration and daemon health |
 
 Global options: `--home <dir>`, `--config <dir>`, `-v, --verbose`.
 
@@ -88,26 +90,26 @@ from a base directory, resolved in this order:
 2. `DEVMAN_HOME`
 3. the current working directory
 
-| Path        | Default          | Override               |
-| ----------- | ---------------- | ---------------------- |
+| Path        | Default          | Override                        |
+| ----------- | ---------------- | ------------------------------- |
 | config dir  | `<home>/config`  | `--config`, `DEVMAN_CONFIG_DIR` |
-| logs dir    | `<home>/logs`    | `DEVMAN_LOGS_DIR`      |
-| runtime dir | `<home>/runtime` | `DEVMAN_RUNTIME_DIR`   |
+| logs dir    | `<home>/logs`    | `DEVMAN_LOGS_DIR`               |
+| runtime dir | `<home>/runtime` | `DEVMAN_RUNTIME_DIR`            |
 
 ### Service fields
 
-| Field         | Type       | Default        | Notes                                     |
-| ------------- | ---------- | -------------- | ----------------------------------------- |
-| `id`          | string     | —              | Required, unique                          |
-| `name`        | string     | `id`           | Display name                              |
-| `cwd`         | string     | `.`            | Resolved relative to the config base      |
-| `command`     | string     | —              | Required executable                       |
-| `args`        | string[]   | `[]`           | Command arguments                         |
-| `enabled`     | boolean    | `true`         | Participate in bulk start/stop            |
-| `dependsOn`   | string[]   | `[]`           | Service ids that must start first         |
-| `env`         | object     | `{}`           | Extra environment variables               |
-| `restart`     | object     | on-failure ×5  | `{ policy, maxRetries, delayMs }`         |
-| `healthCheck` | object     | —              | `{ type, url?, port?, intervalMs?, ... }` |
+| Field         | Type     | Default       | Notes                                     |
+| ------------- | -------- | ------------- | ----------------------------------------- |
+| `id`          | string   | —             | Required, unique                          |
+| `name`        | string   | `id`          | Display name                              |
+| `cwd`         | string   | `.`           | Resolved relative to the config base      |
+| `command`     | string   | —             | Required executable                       |
+| `args`        | string[] | `[]`          | Command arguments                         |
+| `enabled`     | boolean  | `true`        | Participate in bulk start/stop            |
+| `dependsOn`   | string[] | `[]`          | Service ids that must start first         |
+| `env`         | object   | `{}`          | Extra environment variables               |
+| `restart`     | object   | on-failure ×5 | `{ policy, maxRetries, delayMs }`         |
+| `healthCheck` | object   | —             | `{ type, url?, port?, intervalMs?, ... }` |
 
 `restart.policy` is one of `no`, `on-failure`, `always`.
 

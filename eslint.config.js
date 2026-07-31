@@ -26,6 +26,8 @@ export default [
         clearTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        queueMicrotask: 'readonly',
+        performance: 'readonly',
         URL: 'readonly',
       },
     },

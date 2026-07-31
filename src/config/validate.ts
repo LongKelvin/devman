@@ -22,7 +22,11 @@ const DEFAULT_RESTART: RestartConfig = {
   delayMs: 1000,
 };
 
-const RESTART_POLICIES: readonly RestartPolicy[] = ['no', 'on-failure', 'always'];
+const RESTART_POLICIES: readonly RestartPolicy[] = [
+  'no',
+  'on-failure',
+  'always',
+];
 const HEALTH_TYPES = ['process', 'http', 'tcp'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -140,7 +144,9 @@ export function parseServicesDocument(value: unknown): ServiceDefinition[] {
     ? value
     : isRecord(value) && Array.isArray(value.services)
       ? value.services
-      : fail('services.json must be an array or an object with a "services" array.');
+      : fail(
+          'services.json must be an array or an object with a "services" array.',
+        );
 
   const services = list.map(parseServiceDefinition);
   const seen = new Set<string>();
@@ -174,5 +180,7 @@ export function parseProfilesDocument(value: unknown): ProfileDefinition[] {
       };
     });
   }
-  return fail('profiles.json must be an object mapping profile ids to service ids.');
+  return fail(
+    'profiles.json must be an object mapping profile ids to service ids.',
+  );
 }

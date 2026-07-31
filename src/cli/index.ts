@@ -7,11 +7,11 @@
  * behaviour lives in injected handlers.
  */
 import { buildProgram } from './program.js';
-import { phase1Handlers } from './handlers.js';
+import { handlers } from './handlers.js';
 import { exitCodeFor, printError } from './render.js';
 
 async function main(): Promise<void> {
-  const program = buildProgram(phase1Handlers);
+  const program = buildProgram(handlers);
   await program.parseAsync(process.argv);
 }
 

@@ -12,12 +12,7 @@
  * ```
  */
 export type ServiceStatus =
-  | 'configured'
-  | 'starting'
-  | 'running'
-  | 'stopping'
-  | 'stopped'
-  | 'failed';
+  'configured' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
 
 /** Health as reported by the health checker. */
 export type HealthStatus = 'unknown' | 'healthy' | 'unhealthy';
