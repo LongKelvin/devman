@@ -6,6 +6,7 @@
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import type {
+  HealthStatus,
   RuntimeState,
   ServiceRuntime,
   ServiceStatus,
@@ -26,6 +27,19 @@ function colorStatus(status: ServiceStatus): string {
     case 'configured':
     default:
       return chalk.dim(status);
+  }
+}
+
+/** Colour a health label. */
+function colorHealth(health: HealthStatus): string {
+  switch (health) {
+    case 'healthy':
+      return chalk.green(health);
+    case 'unhealthy':
+      return chalk.red(health);
+    case 'unknown':
+    default:
+      return chalk.dim(health);
   }
 }
 
@@ -61,7 +75,7 @@ export function renderStatusTable(state: RuntimeState, nowMs: number): string {
       svc.pid === null ? '-' : String(svc.pid),
       formatUptime(svc, nowMs),
       String(svc.restartCount),
-      svc.health,
+      colorHealth(svc.health),
     ]);
   }
   return table.toString();
@@ -88,7 +102,7 @@ export function renderServiceInfo(runtime: ServiceRuntime): string {
       [chalk.bold('Exit signal')]: runtime.exitSignal ?? '-',
     },
     { [chalk.bold('Restarts')]: String(runtime.restartCount) },
-    { [chalk.bold('Health')]: runtime.health },
+    { [chalk.bold('Health')]: colorHealth(runtime.health) },
   );
   return table.toString();
 }

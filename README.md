@@ -4,11 +4,11 @@ A lightweight local development service manager, inspired by PM2 and systemd,
 but focused on the services you run while developing. A background **daemon**
 owns your dev processes; a thin **CLI** (`start-dev`) talks to it over IPC.
 
-> Status: **Phase 3** — full process management. The daemon supervises services
-> with dependency-ordered start/stop, per-service log capture, crash detection
-> and restart policies. All commands work: `start-dev`, `--status`, `--stop`,
-> `--restart`, `--log <svc>` (live streaming), `--info <svc>`, `doctor`, plus
-> `--profile <name>` scoping. Phase 4/5 add health checks and further polish.
+> Status: **feature-complete (Phases 1–5)**. The daemon supervises services with
+> dependency-ordered start/stop, per-service log capture, crash detection and
+> restart policies, plus periodic health checks (process/tcp/http). All commands
+> work: `start-dev`, `--status`, `--stop`, `--restart`, `--log <svc>` (live
+> streaming), `--info <svc>`, `doctor`, plus `--profile <name>` scoping.
 
 ## Why
 
@@ -123,6 +123,25 @@ from a base directory, resolved in this order:
 
 `restart.policy` is one of `no`, `on-failure`, `always`.
 
+#### Health checks
+
+An optional `healthCheck` monitors a running service on an interval; its result
+appears in the `HEALTH` column and in `--info`.
+
+| Type      | Required field | Meaning                                         |
+| --------- | -------------- | ----------------------------------------------- |
+| `process` | —              | Healthy while the process is running (default). |
+| `tcp`     | `port`         | Healthy while a TCP connection to `port` opens. |
+| `http`    | `url`          | Healthy while a GET to `url` returns 2xx/3xx.   |
+
+Common options: `intervalMs` (poll interval, default 5000) and `timeoutMs`
+(per-probe timeout, default 2000). A `tcp`/`http` check missing its required
+field degrades gracefully to the `process` strategy.
+
+```json
+{ "type": "http", "url": "http://localhost:4000/health", "intervalMs": 5000 }
+```
+
 ## Development
 
 ```bash
@@ -136,8 +155,25 @@ npm test            # vitest
 ## Architecture
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md). Modules under `src/` map to the
-documented components: `cli/`, `daemon/`, `ipc/`, `process/`, `runtime/`,
-`logging/`, `service/`, `config/`, `ui/`, `utils/`.
+documented components, each with a single responsibility:
+
+| Module     | Responsibility                                                |
+| ---------- | ------------------------------------------------------------- |
+| `cli/`     | Thin client; parses commands and renders results over IPC.    |
+| `daemon/`  | Long-lived process; owns state and children; hosts IPC.       |
+| `ipc/`     | Transport-agnostic protocol, codec, server and client.        |
+| `process/` | Process supervision: managed processes, supervisors, manager. |
+| `service/` | Dependency graph and health checks.                           |
+| `runtime/` | Persisted runtime state and the internal event bus.           |
+| `logging/` | Per-service log capture and the internal diagnostic logger.   |
+| `config/`  | Path resolution, config loading and validation.               |
+| `ui/`      | Terminal rendering (tables, colours).                         |
+| `utils/`   | Errors, filesystem and time helpers.                          |
+
+The transport is injectable (`IpcServerTransport`/`IpcClientTransport`), the
+event bus decouples supervision from cross-cutting consumers, and health probes
+sit behind a `HealthProbe` interface — so profiles, watch mode, notifications
+and metrics on the roadmap can be added without restructuring.
 
 ## License
 

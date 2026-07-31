@@ -9,12 +9,13 @@
  */
 import { ManagedProcess, type ExitInfo } from './managedProcess.js';
 import { ServiceLogWriter, logFilePath } from '../logging/serviceLogger.js';
+import { HealthChecker } from '../service/healthChecker.js';
 import { now } from '../utils/time.js';
 import type { EventBus } from '../runtime/events.js';
 import type { Logger } from '../logging/logger.js';
 import type { RuntimeStateStore } from '../runtime/state.js';
 import type { DevmanPaths } from '../config/paths.js';
-import type { ServiceDefinition } from '../types/index.js';
+import type { HealthStatus, ServiceDefinition } from '../types/index.js';
 import type { LogStreamName } from '../logging/serviceLogger.js';
 
 /** How long a service is given to exit gracefully before SIGKILL. */
@@ -35,6 +36,7 @@ export class ServiceSupervisor {
   private readonly logWriter: ServiceLogWriter;
   private readonly logger: Logger;
   private process: ManagedProcess | undefined;
+  private health: HealthChecker | undefined;
   private restartCount = 0;
   /** True while a user-requested stop is in progress (suppresses restart). */
   private stopRequested = false;
@@ -127,6 +129,36 @@ export class ServiceSupervisor {
       at,
     });
     this.logger.info('Service started', { pid });
+    this.startHealthChecks();
+  }
+
+  /** Begin health monitoring for the current run, if configured. */
+  private startHealthChecks(): void {
+    if (!this.service.healthCheck) return;
+    this.health = new HealthChecker(
+      this.service.healthCheck,
+      { isProcessRunning: () => this.running },
+      (health) => void this.onHealthChanged(health),
+    );
+    this.health.start();
+  }
+
+  /** Persist a health transition and emit the corresponding event. */
+  private async onHealthChanged(health: HealthStatus): Promise<void> {
+    const at = now();
+    await this.deps.state.updateService(this.service.id, { health }, at);
+    this.deps.events.emit('HealthChanged', {
+      serviceId: this.service.id,
+      health,
+      at,
+    });
+    this.logger.debug('Health changed', { health });
+  }
+
+  /** Stop and clear the health checker, if any. */
+  private stopHealthChecks(): void {
+    this.health?.stop();
+    this.health = undefined;
   }
 
   /** Handle a captured output line: persist to the log file and emit an event. */
@@ -143,6 +175,7 @@ export class ServiceSupervisor {
   /** Handle process exit: update state, then apply restart policy. */
   private async onExit(info: ExitInfo): Promise<void> {
     this.process = undefined;
+    this.stopHealthChecks();
     const at = now();
     const expected = this.stopRequested;
     const crashed = !expected && !(info.code === 0 && info.signal === null);

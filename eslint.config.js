@@ -28,6 +28,8 @@ export default [
         clearInterval: 'readonly',
         queueMicrotask: 'readonly',
         performance: 'readonly',
+        fetch: 'readonly',
+        AbortController: 'readonly',
         URL: 'readonly',
       },
     },

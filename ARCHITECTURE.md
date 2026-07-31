@@ -141,11 +141,16 @@ logs/<service>.log
 
 Support live tailing, timestamps, stdout/stderr separation and future log rotation.
 
+## Implementation Status
+
+Implemented: daemon + IPC, runtime persistence, graceful shutdown, process
+manager (start/stop/restart, crash detection, dependency ordering), per-service
+logging with live tailing, and health checks (process/tcp/http).
+
 ## Future Roadmap
 
 - Interactive TUI
 - Watch mode
-- Auto restart
 - Plugin system
 - Notifications
 - Metrics
