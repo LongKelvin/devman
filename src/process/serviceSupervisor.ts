@@ -42,6 +42,12 @@ export class ServiceSupervisor {
   private stopRequested = false;
   /** Guards against overlapping restart timers. */
   private restartTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Resolves when the in-flight exit handler (state persistence + restart
+   * decision) has finished. `stop()` awaits this so callers can rely on runtime
+   * state being fully settled once stop resolves.
+   */
+  private exitHandled: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly service: ServiceDefinition,
@@ -82,10 +88,16 @@ export class ServiceSupervisor {
       this.restartTimer = undefined;
     }
     const process = this.process;
-    if (!process) return;
+    if (!process) {
+      // Nothing running, but an exit handler may still be settling state.
+      await this.exitHandled;
+      return;
+    }
 
     await this.transition('stopping');
     await process.stop(this.deps.stopGraceMs ?? DEFAULT_STOP_GRACE_MS);
+    // Wait for onExit to persist the terminal state before returning.
+    await this.exitHandled;
   }
 
   /** Restart: stop if running, then start fresh. */
@@ -106,7 +118,10 @@ export class ServiceSupervisor {
 
     const proc = new ManagedProcess(this.service, this.deps.paths.home, {
       onLine: (stream, line) => this.onLine(stream, line),
-      onExit: (info) => void this.onExit(info),
+      onExit: (info) => {
+        // Track the exit handler so stop() can await state settlement.
+        this.exitHandled = this.onExit(info);
+      },
     });
     this.process = proc;
 
