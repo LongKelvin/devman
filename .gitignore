@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Runtime artifacts (daemon PID, sockets, state, live logs)
+runtime/
+logs/
+
+# Local, non-example configuration
+config/services.json
+config/profiles.json
+
+.DS_Store

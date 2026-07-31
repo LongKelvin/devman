@@ -1,0 +1,5 @@
+{
+  "backend": ["db", "api"],
+  "frontend": ["web"],
+  "full": ["db", "api", "web"]
+}

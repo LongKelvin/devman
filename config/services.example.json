@@ -1,0 +1,55 @@
+{
+  "services": [
+    {
+      "id": "api",
+      "name": "API Server",
+      "cwd": "./api",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "enabled": true,
+      "dependsOn": ["db"],
+      "env": {
+        "NODE_ENV": "development",
+        "PORT": "4000"
+      },
+      "restart": {
+        "policy": "on-failure",
+        "maxRetries": 5,
+        "delayMs": 1000
+      },
+      "healthCheck": {
+        "type": "http",
+        "url": "http://localhost:4000/health",
+        "intervalMs": 5000,
+        "timeoutMs": 2000
+      }
+    },
+    {
+      "id": "db",
+      "name": "Database",
+      "cwd": ".",
+      "command": "docker",
+      "args": ["compose", "up", "postgres"],
+      "enabled": true,
+      "dependsOn": [],
+      "env": {},
+      "restart": {
+        "policy": "always",
+        "maxRetries": 10,
+        "delayMs": 2000
+      }
+    },
+    {
+      "id": "web",
+      "name": "Web Frontend",
+      "cwd": "./web",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "enabled": true,
+      "dependsOn": ["api"],
+      "env": {
+        "PORT": "3000"
+      }
+    }
+  ]
+}
