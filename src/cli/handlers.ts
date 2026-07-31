@@ -2,34 +2,73 @@
  * CLI command handlers.
  *
  * Handlers are thin: they resolve the daemon over IPC and render results. They
- * never own child processes. Methods that require the process manager (starting
- * and streaming individual services) arrive in later phases; until then they
- * report clearly rather than pretend to work.
+ * never own child processes — every action is an IPC call to the daemon, which
+ * is the sole owner of managed processes.
  */
 import ora from 'ora';
 import { loadConfig } from '../config/loader.js';
 import { pathExists } from '../utils/fs.js';
 import { now } from '../utils/time.js';
 import { ensureDaemon, pingDaemon } from '../daemon/bootstrap.js';
-import { callDaemon } from './daemonClient.js';
+import { callDaemon, withDaemon } from './daemonClient.js';
 import { printInfo, printSuccess } from './render.js';
-import { renderStatusTable } from '../ui/statusTable.js';
-import { notImplemented } from './commands/stub.js';
+import { renderServiceInfo, renderStatusTable } from '../ui/statusTable.js';
 import type { CliContext } from './context.js';
 import type { CommandHandlers, StartDevOptions } from './program.js';
-import type { PingResult, StatusResult } from '../ipc/protocol.js';
+import type {
+  InfoResult,
+  LifecycleResult,
+  StatusResult,
+} from '../ipc/protocol.js';
+
+/**
+ * Resolve the `--profile` option to explicit service ids by consulting the
+ * configuration. Returns `undefined` when no profile is given, letting the
+ * daemon apply its default (all enabled services).
+ */
+async function resolveSelector(
+  ctx: CliContext,
+  profile: string | undefined,
+): Promise<{ ids?: string[] }> {
+  if (!profile) return {};
+  const config = await loadConfig(ctx.paths);
+  return { ids: config.resolveProfile(profile) };
+}
 
 async function showStatus(ctx: CliContext): Promise<void> {
   const { state } = await callDaemon<StatusResult>(ctx.paths, 'status', {});
   process.stdout.write(`${renderStatusTable(state, now())}\n`);
 }
 
-async function stopAll(ctx: CliContext): Promise<void> {
+async function stopAll(
+  ctx: CliContext,
+  options: StartDevOptions,
+): Promise<void> {
   if ((await pingDaemon(ctx.paths)) === null) {
     printInfo('Daemon is not running.');
     return;
   }
-  const spinner = ora('Stopping daemon…').start();
+
+  // A scoped stop (`--profile`) stops only those services and leaves the daemon
+  // running; a bare `--stop` stops everything and shuts the daemon down.
+  if (options.profile) {
+    const selector = await resolveSelector(ctx, options.profile);
+    const spinner = ora(`Stopping profile "${options.profile}"…`).start();
+    try {
+      const { services } = await callDaemon<LifecycleResult>(
+        ctx.paths,
+        'stop',
+        selector,
+      );
+      spinner.succeed(`Stopped ${services.length} service(s).`);
+    } catch (error) {
+      spinner.fail('Failed to stop services.');
+      throw error;
+    }
+    return;
+  }
+
+  const spinner = ora('Stopping all services and daemon…').start();
   try {
     await callDaemon(ctx.paths, 'shutdown', {});
     spinner.succeed('Daemon stopped.');
@@ -39,18 +78,76 @@ async function stopAll(ctx: CliContext): Promise<void> {
   }
 }
 
-async function startDefault(ctx: CliContext): Promise<void> {
-  const spinner = ora('Starting daemon…').start();
-  let ping: PingResult;
+async function restart(
+  ctx: CliContext,
+  options: StartDevOptions,
+): Promise<void> {
+  const selector = await resolveSelector(ctx, options.profile);
+  await ensureDaemon(ctx.paths, ctx.logger);
+  const spinner = ora('Restarting services…').start();
   try {
-    ping = await ensureDaemon(ctx.paths, ctx.logger);
-    spinner.succeed(`Daemon ready (pid ${ping.daemonPid}).`);
+    const { services } = await callDaemon<LifecycleResult>(
+      ctx.paths,
+      'restart',
+      selector,
+      { timeoutMs: 60_000 },
+    );
+    spinner.succeed(`Restarted ${services.length} service(s).`);
+  } catch (error) {
+    spinner.fail('Failed to restart services.');
+    throw error;
+  }
+  await showStatus(ctx);
+}
+
+async function startDefault(
+  ctx: CliContext,
+  options: StartDevOptions,
+): Promise<void> {
+  const spinner = ora('Starting daemon…').start();
+  try {
+    const ping = await ensureDaemon(ctx.paths, ctx.logger);
+    spinner.text = `Daemon ready (pid ${ping.daemonPid}); starting services…`;
   } catch (error) {
     spinner.fail('Daemon failed to start.');
     throw error;
   }
-  // Service supervision is added in Phase 3; for now surface current state.
+
+  try {
+    const selector = await resolveSelector(ctx, options.profile);
+    const { services } = await callDaemon<LifecycleResult>(
+      ctx.paths,
+      'start',
+      selector,
+      { timeoutMs: 60_000 },
+    );
+    spinner.succeed(`Started ${services.length} service(s).`);
+  } catch (error) {
+    spinner.fail('Failed to start services.');
+    throw error;
+  }
   await showStatus(ctx);
+}
+
+async function showInfo(ctx: CliContext, serviceId: string): Promise<void> {
+  const { runtime } = await callDaemon<InfoResult>(ctx.paths, 'info', {
+    serviceId,
+  });
+  process.stdout.write(`${renderServiceInfo(runtime)}\n`);
+}
+
+async function streamLogs(ctx: CliContext, serviceId: string): Promise<void> {
+  await withDaemon(ctx.paths, async (client) => {
+    await client.call(
+      'logs',
+      { serviceId, follow: true },
+      {
+        // Follow streams are open-ended; disable the response timeout.
+        timeoutMs: 0,
+        onStream: (chunk) => process.stdout.write(`${String(chunk)}\n`),
+      },
+    );
+  });
 }
 
 async function runDoctor(ctx: CliContext): Promise<void> {
@@ -84,11 +181,11 @@ async function runDoctor(ctx: CliContext): Promise<void> {
 export const handlers: CommandHandlers = {
   async startDev(ctx: CliContext, options: StartDevOptions): Promise<void> {
     if (options.status) return showStatus(ctx);
-    if (options.stop) return stopAll(ctx);
-    if (options.restart) notImplemented('start-dev --restart');
-    if (options.log) notImplemented('start-dev --log');
-    if (options.info) notImplemented('start-dev --info');
-    return startDefault(ctx);
+    if (options.stop) return stopAll(ctx, options);
+    if (options.restart) return restart(ctx, options);
+    if (options.log) return streamLogs(ctx, options.log);
+    if (options.info) return showInfo(ctx, options.info);
+    return startDefault(ctx, options);
   },
   doctor: runDoctor,
 };

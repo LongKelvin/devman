@@ -29,10 +29,14 @@ function colorStatus(status: ServiceStatus): string {
   }
 }
 
-/** Human-friendly uptime from a start timestamp. */
-function formatUptime(startedAt: number | null, nowMs: number): string {
-  if (startedAt === null) return '-';
-  const seconds = Math.max(0, Math.floor((nowMs - startedAt) / 1000));
+/**
+ * Human-friendly uptime for a running service. Uptime is meaningful only while
+ * the process is up, so non-running services render `-` regardless of their
+ * last start time.
+ */
+function formatUptime(svc: ServiceRuntime, nowMs: number): string {
+  if (svc.status !== 'running' || svc.startedAt === null) return '-';
+  const seconds = Math.max(0, Math.floor((nowMs - svc.startedAt) / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
@@ -55,7 +59,7 @@ export function renderStatusTable(state: RuntimeState, nowMs: number): string {
       svc.id,
       colorStatus(svc.status),
       svc.pid === null ? '-' : String(svc.pid),
-      formatUptime(svc.startedAt, nowMs),
+      formatUptime(svc, nowMs),
       String(svc.restartCount),
       svc.health,
     ]);

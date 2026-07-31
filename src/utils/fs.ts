@@ -26,9 +26,18 @@ export async function writeJsonFileAtomic(
   value: unknown,
 ): Promise<void> {
   await ensureDir(dirname(path));
-  const tmp = `${path}.${process.pid}.tmp`;
+  // A per-call unique suffix prevents concurrent writers in the same process
+  // from colliding on one temp file (which would race on rename).
+  const tmp = `${path}.${process.pid}.${nextTmpSeq()}.tmp`;
   await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   await rename(tmp, path);
+}
+
+let tmpSeq = 0;
+/** Monotonic counter making temp-file names unique within a process. */
+function nextTmpSeq(): number {
+  tmpSeq = (tmpSeq + 1) % Number.MAX_SAFE_INTEGER;
+  return tmpSeq;
 }
 
 /** Return whether a filesystem path exists. */

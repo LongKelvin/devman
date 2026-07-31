@@ -4,11 +4,11 @@ A lightweight local development service manager, inspired by PM2 and systemd,
 but focused on the services you run while developing. A background **daemon**
 owns your dev processes; a thin **CLI** (`start-dev`) talks to it over IPC.
 
-> Status: **Phase 2** — the background daemon is live. It owns runtime state,
-> serves the CLI over a Unix-socket IPC channel (`ping`/`status`/`shutdown`),
-> manages its own PID file and shuts down gracefully. `start-dev` auto-spawns a
-> detached daemon; `--status` and `--stop` work today. Per-service process
-> supervision (`start`/`restart`/`--log`/`--info`) lands in Phase 3.
+> Status: **Phase 3** — full process management. The daemon supervises services
+> with dependency-ordered start/stop, per-service log capture, crash detection
+> and restart policies. All commands work: `start-dev`, `--status`, `--stop`,
+> `--restart`, `--log <svc>` (live streaming), `--info <svc>`, `doctor`, plus
+> `--profile <name>` scoping. Phase 4/5 add health checks and further polish.
 
 ## Why
 
@@ -76,10 +76,20 @@ Requires Node.js 20+.
 | `start-dev --info <svc>` | Show detailed info for a service         |
 | `start-dev doctor`       | Diagnose configuration and daemon health |
 
-Global options: `--home <dir>`, `--config <dir>`, `-v, --verbose`.
+Global options: `--home <dir>`, `--config <dir>`, `-v, --verbose`. The
+`--profile <name>` option scopes `start-dev`, `--stop` and `--restart` to a
+profile's services (a scoped `--stop` leaves the daemon running).
 
-> Commands that require the daemon report "not implemented yet" until their
-> phase lands. `doctor` is fully functional today.
+### How process management works
+
+- Services start in dependency order (a service's `dependsOn` are started
+  first) and stop in reverse order.
+- Each service's stdout/stderr is captured to `logs/<id>.log` with timestamps.
+- On unexpected exit the `restart.policy` decides whether to relaunch
+  (`on-failure` restarts on non-zero exit; `always` restarts on any exit),
+  bounded by `restart.maxRetries` with a `restart.delayMs` backoff.
+- Each service runs in its own process group, so stopping it reaps the whole
+  process tree (no orphaned grandchildren).
 
 ## Configuration
 

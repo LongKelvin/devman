@@ -12,7 +12,9 @@ import { IpcServer } from '../ipc/server.js';
 import { SocketServerTransport } from '../ipc/socketTransport.js';
 import { RuntimeStateStore } from '../runtime/state.js';
 import { EventBus } from '../runtime/events.js';
+import { ProcessManager } from '../process/processManager.js';
 import { acquirePidFile, releasePidFile } from './pidfile.js';
+import { registerLifecycleHandlers } from './handlers.js';
 import { now } from '../utils/time.js';
 import type { Logger } from '../logging/logger.js';
 import type { DevmanConfig } from '../config/loader.js';
@@ -38,6 +40,7 @@ export class Daemon {
   private readonly events = new EventBus();
   private readonly ipc: IpcServer;
   private readonly state: RuntimeStateStore;
+  private readonly processes: ProcessManager;
   private shuttingDown = false;
   private readonly stopped: Promise<void>;
   private resolveStopped: () => void = () => {};
@@ -55,21 +58,35 @@ export class Daemon {
       socketPath: deps.paths.socketPath,
       serviceIds: deps.config.services.map((s) => s.id),
     });
+    this.processes = new ProcessManager({
+      paths: deps.paths,
+      config: deps.config,
+      state: this.state,
+      events: this.events,
+      logger: this.logger,
+    });
     this.ipc = new IpcServer(
       new SocketServerTransport(deps.paths.socketPath),
       this.logger,
     );
     this.registerHandlers();
+    // Stop all child processes before IPC is torn down on shutdown.
+    this.onBeforeShutdown(() => this.processes.stopAll());
   }
 
-  /** Access to the runtime-state store (used by the process manager later). */
+  /** The runtime-state store owned by this daemon. */
   get runtimeState(): RuntimeStateStore {
     return this.state;
   }
 
-  /** Access to the event bus (used by the process manager later). */
+  /** The event bus owned by this daemon. */
   get eventBus(): EventBus {
     return this.events;
+  }
+
+  /** The process manager owned by this daemon. */
+  get processManager(): ProcessManager {
+    return this.processes;
   }
 
   /**
@@ -142,6 +159,12 @@ export class Daemon {
       // Defer so the response is flushed before the socket closes.
       queueMicrotask(() => void this.shutdown('ipc'));
       return { stopping: true };
+    });
+
+    registerLifecycleHandlers(this.ipc, {
+      processes: this.processes,
+      events: this.events,
+      paths: this.deps.paths,
     });
   }
 
