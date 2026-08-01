@@ -46,8 +46,8 @@ describe('ProcessManager', () => {
       [
         parseServiceDefinition({
           id: 'sleeper',
-          command: 'sleep',
-          args: ['30'],
+          command: process.execPath,
+          args: ['-e', 'setTimeout(()=>{},30000)'],
         }),
       ],
       [],
@@ -68,8 +68,11 @@ describe('ProcessManager', () => {
       [
         parseServiceDefinition({
           id: 'echoer',
-          command: 'sh',
-          args: ['-c', 'echo hello-world; sleep 30'],
+          command: process.execPath,
+          args: [
+            '-e',
+            "process.stdout.write('hello-world\\n'); setTimeout(()=>{},30000)",
+          ],
         }),
       ],
       [],
@@ -78,7 +81,7 @@ describe('ProcessManager', () => {
     const pm = makeManager(config, dir);
 
     await pm.start();
-    await delay(300); // allow the line to be flushed
+    await delay(500); // allow the line to be flushed
     const tail = await readLogTail(logFilePath(paths, 'echoer'), 10);
     expect(tail.some((l) => l.includes('hello-world'))).toBe(true);
 
@@ -90,13 +93,13 @@ describe('ProcessManager', () => {
       [
         parseServiceDefinition({
           id: 'dep',
-          command: 'sleep',
-          args: ['30'],
+          command: process.execPath,
+          args: ['-e', 'setTimeout(()=>{},30000)'],
         }),
         parseServiceDefinition({
           id: 'app',
-          command: 'sleep',
-          args: ['30'],
+          command: process.execPath,
+          args: ['-e', 'setTimeout(()=>{},30000)'],
           dependsOn: ['dep'],
         }),
       ],
@@ -109,5 +112,5 @@ describe('ProcessManager', () => {
     expect(started.map((s) => s.id)).toEqual(['dep', 'app']);
 
     await pm.stopAll();
-  });
+  }, 15000);
 });

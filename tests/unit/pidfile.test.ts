@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   acquirePidFile,
   isProcessAlive,
@@ -30,6 +30,26 @@ describe('isProcessAlive', () => {
   it('reports an unused pid as dead', () => {
     // 2^31 - 1 is not a realistic live pid.
     expect(isProcessAlive(2147483647)).toBe(false);
+  });
+
+  it('treats EPERM as alive (process exists but cannot be signalled)', () => {
+    // EPERM means the process exists but we do not own it — still alive.
+    // This path is more common on Windows where non-admin processes cannot
+    // send signals to arbitrary pids.
+    const origKill = process.kill.bind(process);
+    const stub = vi.spyOn(process, 'kill').mockImplementationOnce(() => {
+      const err: NodeJS.ErrnoException = Object.assign(
+        new Error('Operation not permitted'),
+        { code: 'EPERM' },
+      );
+      throw err;
+    });
+    try {
+      expect(isProcessAlive(99999)).toBe(true);
+    } finally {
+      stub.mockRestore();
+      void origKill; // keep reference to avoid lint warning
+    }
   });
 });
 
