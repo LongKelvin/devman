@@ -5,7 +5,6 @@
   "type": "module",
   "license": "MIT",
   "bin": {
-    "start-dev": "dist/cli/index.js",
     "devman": "dist/cli/index.js"
   },
   "files": [
