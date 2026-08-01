@@ -10,6 +10,7 @@
 import { execa, type Options, type ResultPromise } from 'execa';
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import { DevmanError } from '../utils/errors.js';
 import type { LogStreamName } from '../logging/serviceLogger.js';
 import type { ServiceDefinition } from '../types/index.js';
@@ -62,6 +63,13 @@ export class ManagedProcess {
     this.stopping = false;
 
     const cwd = resolve(this.baseDir, this.service.cwd);
+    if (!existsSync(cwd)) {
+      throw new DevmanError(
+        'PROCESS_START_FAILED',
+        `Working directory not found for "${this.service.id}": ${cwd}`,
+        { hint: `Check the "cwd" setting for ${this.service.id} in services.json.` },
+      );
+    }
     const options: Options = {
       cwd,
       env: { ...process.env, ...this.service.env },

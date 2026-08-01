@@ -14,7 +14,7 @@ import { callDaemon, withDaemon } from './daemonClient.js';
 import { printInfo, printSuccess } from './render.js';
 import { renderServiceInfo, renderStatusTable } from '../ui/statusTable.js';
 import type { CliContext } from './context.js';
-import type { CommandHandlers, StartDevOptions } from './program.js';
+import type { CommandHandlers, ProfileOptions } from './program.js';
 import type {
   InfoResult,
   LifecycleResult,
@@ -42,7 +42,7 @@ async function showStatus(ctx: CliContext): Promise<void> {
 
 async function stopAll(
   ctx: CliContext,
-  options: StartDevOptions,
+  options: ProfileOptions,
 ): Promise<void> {
   if ((await pingDaemon(ctx.paths)) === null) {
     printInfo('Daemon is not running.');
@@ -80,7 +80,7 @@ async function stopAll(
 
 async function restart(
   ctx: CliContext,
-  options: StartDevOptions,
+  options: ProfileOptions,
 ): Promise<void> {
   const selector = await resolveSelector(ctx, options.profile);
   await ensureDaemon(ctx.paths, ctx.logger);
@@ -102,7 +102,7 @@ async function restart(
 
 async function startDefault(
   ctx: CliContext,
-  options: StartDevOptions,
+  options: ProfileOptions,
 ): Promise<void> {
   const spinner = ora('Starting daemon…').start();
   try {
@@ -173,19 +173,17 @@ async function runDoctor(ctx: CliContext): Promise<void> {
   if (ping) {
     printSuccess(`Daemon running (pid ${ping.daemonPid}, v${ping.version}).`);
   } else {
-    printInfo('Daemon is not running. Start it with `start-dev`.');
+    printInfo('Daemon is not running. Run `devman start` to start it.');
   }
 }
 
 /** Production command handlers. */
 export const handlers: CommandHandlers = {
-  async startDev(ctx: CliContext, options: StartDevOptions): Promise<void> {
-    if (options.status) return showStatus(ctx);
-    if (options.stop) return stopAll(ctx, options);
-    if (options.restart) return restart(ctx, options);
-    if (options.log) return streamLogs(ctx, options.log);
-    if (options.info) return showInfo(ctx, options.info);
-    return startDefault(ctx, options);
-  },
+  start: startDefault,
+  status: showStatus,
+  stop: stopAll,
+  restart,
+  log: streamLogs,
+  info: showInfo,
   doctor: runDoctor,
 };

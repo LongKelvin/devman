@@ -1,23 +1,18 @@
 /**
- * CLI definition. Builds the Commander program that backs the `start-dev`
- * (and `devman`) binaries.
+ * CLI definition. Builds the Commander program that backs the `devman` binary.
  *
- * The architecture specifies a single primary command, `start-dev`, whose
- * behaviour is selected by flags (`--status`, `--stop`, `--restart`, `--log`,
- * `--info`) plus a `doctor` subcommand. Command *handlers* are injected so the
+ * Uses subcommands for all actions: `devman start`, `devman status`,
+ * `devman stop`, `devman restart`, `devman log <service>`,
+ * `devman info <service>`, `devman doctor`. A bare `devman` (no subcommand)
+ * is equivalent to `devman start`. Command *handlers* are injected so the
  * program definition stays free of I/O and is unit-testable.
  */
 import { Command } from 'commander';
 import type { CliContext, GlobalOptions } from './context.js';
 import { createContext } from './context.js';
 
-/** Options parsed from the default `start-dev` action. */
-export interface StartDevOptions {
-  readonly status?: boolean;
-  readonly stop?: boolean;
-  readonly restart?: boolean;
-  readonly log?: string;
-  readonly info?: string;
+/** Options shared by commands that support profile scoping. */
+export interface ProfileOptions {
   readonly profile?: string;
 }
 
@@ -27,12 +22,17 @@ export interface StartDevOptions {
  * keeps handlers independently testable.
  */
 export interface CommandHandlers {
-  startDev(ctx: CliContext, options: StartDevOptions): Promise<void>;
+  start(ctx: CliContext, options: ProfileOptions): Promise<void>;
+  status(ctx: CliContext): Promise<void>;
+  stop(ctx: CliContext, options: ProfileOptions): Promise<void>;
+  restart(ctx: CliContext, options: ProfileOptions): Promise<void>;
+  log(ctx: CliContext, service: string): Promise<void>;
+  info(ctx: CliContext, service: string): Promise<void>;
   doctor(ctx: CliContext): Promise<void>;
 }
 
 /** Program name shown in help output. */
-export const PROGRAM_NAME = 'start-dev';
+export const PROGRAM_NAME = 'devman';
 
 /** Build the Commander program with the given handlers. */
 export function buildProgram(handlers: CommandHandlers): Command {
@@ -49,15 +49,54 @@ export function buildProgram(handlers: CommandHandlers): Command {
   const contextFor = (command: Command): CliContext =>
     createContext(command.optsWithGlobals() as GlobalOptions);
 
+  // Bare `devman` with no subcommand starts services.
+  program.action(async (_options: unknown, command: Command) => {
+    await handlers.start(contextFor(command), {});
+  });
+
   program
-    .option('-s, --status', 'show status of all services')
-    .option('--stop', 'stop all services and the daemon')
-    .option('--restart', 'restart all services')
-    .option('--log <service>', 'stream logs for a service')
-    .option('--info <service>', 'show detailed info for a service')
+    .command('start')
+    .description('start all enabled services (default action)')
     .option('-p, --profile <profile>', 'limit the action to a profile')
-    .action(async (options: StartDevOptions, command: Command) => {
-      await handlers.startDev(contextFor(command), options);
+    .action(async (options: ProfileOptions, command: Command) => {
+      await handlers.start(contextFor(command), options);
+    });
+
+  program
+    .command('status')
+    .description('show status of all services')
+    .action(async (_options: unknown, command: Command) => {
+      await handlers.status(contextFor(command));
+    });
+
+  program
+    .command('stop')
+    .description('stop all services and the daemon')
+    .option('-p, --profile <profile>', 'limit the stop to a profile (leaves daemon running)')
+    .action(async (options: ProfileOptions, command: Command) => {
+      await handlers.stop(contextFor(command), options);
+    });
+
+  program
+    .command('restart')
+    .description('restart all services')
+    .option('-p, --profile <profile>', 'limit the action to a profile')
+    .action(async (options: ProfileOptions, command: Command) => {
+      await handlers.restart(contextFor(command), options);
+    });
+
+  program
+    .command('log <service>')
+    .description('stream logs for a service')
+    .action(async (service: string, _options: unknown, command: Command) => {
+      await handlers.log(contextFor(command), service);
+    });
+
+  program
+    .command('info <service>')
+    .description('show detailed info for a service')
+    .action(async (service: string, _options: unknown, command: Command) => {
+      await handlers.info(contextFor(command), service);
     });
 
   program

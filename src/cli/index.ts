@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `start-dev` / `devman` CLI entry point.
+ * `devman` CLI entry point.
  *
  * Responsibilities are deliberately thin: build the program, run it, and turn
  * any thrown error into a friendly message plus a non-zero exit code. All real

@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { openSync } from 'node:fs';
+import { join } from 'node:path';
 import { ensureDir } from '../utils/fs.js';
 import { delay } from '../utils/time.js';
 import { DevmanError } from '../utils/errors.js';
@@ -77,7 +78,7 @@ export async function ensureDaemon(
 async function spawnDaemon(paths: DevmanPaths, logger: Logger): Promise<void> {
   await ensureDir(paths.logsDir);
   await ensureDir(paths.runtimeDir);
-  const logFd = openSync(`${paths.logsDir}/daemon.log`, 'a');
+  const logFd = openSync(join(paths.logsDir, 'daemon.log'), 'a');
 
   const child = spawn(process.execPath, [daemonEntryPath()], {
     detached: true,
@@ -116,6 +117,6 @@ async function waitForDaemon(
     pid === null
       ? `Daemon exited during startup within ${timeout}ms.`
       : `Daemon (pid ${pid}) did not become reachable within ${timeout}ms.`,
-    { hint: `Check ${paths.logsDir}/daemon.log for startup errors.` },
+    { hint: `Check ${join(paths.logsDir, 'daemon.log')} for startup errors.` },
   );
 }

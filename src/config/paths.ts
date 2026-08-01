@@ -50,7 +50,9 @@ export interface ResolvePathsOptions {
 
 /** Resolve `candidate` against `base` unless it is already absolute. */
 function resolveFrom(base: string, candidate: string): string {
-  return isAbsolute(candidate) ? candidate : resolve(base, candidate);
+  // Always run resolve() so root-relative paths like /srv/app get a drive
+  // letter on Windows, keeping home and its children consistent.
+  return isAbsolute(candidate) ? resolve(candidate) : resolve(base, candidate);
 }
 
 /**
