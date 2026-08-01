@@ -2,13 +2,14 @@
 
 A lightweight local development service manager, inspired by PM2 and systemd,
 but focused on the services you run while developing. A background **daemon**
-owns your dev processes; a thin **CLI** (`start-dev`) talks to it over IPC.
+owns your dev processes; a thin **CLI** (`devman`) talks to it over IPC.
 
 > Status: **feature-complete (Phases 1–5)**. The daemon supervises services with
 > dependency-ordered start/stop, per-service log capture, crash detection and
 > restart policies, plus periodic health checks (process/tcp/http). All commands
-> work: `start-dev`, `--status`, `--stop`, `--restart`, `--log <svc>` (live
-> streaming), `--info <svc>`, `doctor`, plus `--profile <name>` scoping.
+> work: `devman start`, `devman status`, `devman stop`, `devman restart`,
+> `devman log <svc>` (live streaming), `devman info <svc>`, `devman doctor`,
+> plus `--profile <name>` scoping.
 
 ## Why
 
@@ -22,10 +23,10 @@ per-service logs.
 ```bash
 npm install
 npm run build
-npm link   # optional: puts `start-dev` / `devman` on your PATH
+npm link   # optional: puts `devman` on your PATH
 ```
 
-Requires Node.js 20+.
+Requires Node.js 20+. Works on **macOS, Linux, and Windows** (Node.js 20+).
 
 ## Quick start
 
@@ -61,24 +62,24 @@ Requires Node.js 20+.
 3. Check everything is wired up:
 
    ```bash
-   start-dev doctor
+   devman doctor
    ```
 
 ## Commands
 
-| Command                  | Description                              |
-| ------------------------ | ---------------------------------------- |
-| `start-dev`              | Start all enabled services (via daemon)  |
-| `start-dev --status`     | Show status of all services              |
-| `start-dev --stop`       | Stop all services and the daemon         |
-| `start-dev --restart`    | Restart all services                     |
-| `start-dev --log <svc>`  | Stream logs for a service                |
-| `start-dev --info <svc>` | Show detailed info for a service         |
-| `start-dev doctor`       | Diagnose configuration and daemon health |
+| Command                 | Description                              |
+| ----------------------- | ---------------------------------------- |
+| `devman` / `devman start`| Start all enabled services (via daemon) |
+| `devman status`         | Show status of all services              |
+| `devman stop`           | Stop all services and the daemon         |
+| `devman restart`        | Restart all services                     |
+| `devman log <svc>`      | Stream logs for a service                |
+| `devman info <svc>`     | Show detailed info for a service         |
+| `devman doctor`         | Diagnose configuration and daemon health |
 
 Global options: `--home <dir>`, `--config <dir>`, `-v, --verbose`. The
-`--profile <name>` option scopes `start-dev`, `--stop` and `--restart` to a
-profile's services (a scoped `--stop` leaves the daemon running).
+`--profile <name>` option on `start`, `stop`, and `restart` scopes the action to
+a profile's services (a scoped `stop` leaves the daemon running).
 
 ### How process management works
 
@@ -88,8 +89,19 @@ profile's services (a scoped `--stop` leaves the daemon running).
 - On unexpected exit the `restart.policy` decides whether to relaunch
   (`on-failure` restarts on non-zero exit; `always` restarts on any exit),
   bounded by `restart.maxRetries` with a `restart.delayMs` backoff.
-- Each service runs in its own process group, so stopping it reaps the whole
-  process tree (no orphaned grandchildren).
+- Each service runs in its own process group (on macOS/Linux), so stopping it
+  reaps the whole process tree (no orphaned grandchildren). On Windows, the
+  process is terminated directly.
+
+## Platform support
+
+`devman` runs on **macOS, Linux, and Windows**. Platform-specific behaviour:
+
+| Feature | macOS / Linux | Windows |
+| --- | --- | --- |
+| IPC transport | Unix domain socket (`runtime/daemon.sock`) | Named pipe (`\\.\pipe\devman-<hex>`) |
+| Process group | `detached: true` + signal `-pid` (reaps whole tree) | Direct child kill via `TerminateProcess` |
+| Daemon spawn | Fully detached (`unref()`) | Fully detached (`unref()`) |
 
 ## Configuration
 
