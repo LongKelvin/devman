@@ -13,6 +13,7 @@
  * overrides.
  */
 import { isAbsolute, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 
 /** Fully-resolved set of paths used throughout the daemon and CLI. */
 export interface DevmanPaths {
@@ -74,9 +75,14 @@ export function resolvePaths(options: ResolvePathsOptions = {}): DevmanPaths {
   const logsDir = resolveFrom(home, env.DEVMAN_LOGS_DIR ?? 'logs');
   const runtimeDir = resolveFrom(home, env.DEVMAN_RUNTIME_DIR ?? 'runtime');
 
+  // A full-length hash of the runtime dir keeps the pipe name unique per
+  // devman home. A truncated hash (or a truncated hex encoding of the raw
+  // path) risks collisions between sibling projects that share a path
+  // prefix — e.g. two repos under the same parent folder — which would
+  // route one project's CLI onto another project's daemon.
   const socketPath =
     process.platform === 'win32'
-      ? `\\\\.\\pipe\\devman-${Buffer.from(runtimeDir).toString('hex').slice(0, 16)}`
+      ? `\\\\.\\pipe\\devman-${createHash('sha256').update(runtimeDir).digest('hex')}`
       : resolve(runtimeDir, 'daemon.sock');
 
   return {

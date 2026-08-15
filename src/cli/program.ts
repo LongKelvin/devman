@@ -23,12 +23,25 @@ export interface ProfileOptions {
  */
 export interface CommandHandlers {
   start(ctx: CliContext, options: ProfileOptions): Promise<void>;
-  status(ctx: CliContext): Promise<void>;
+  status(ctx: CliContext, options: JsonOptions): Promise<void>;
   stop(ctx: CliContext, options: ProfileOptions): Promise<void>;
   restart(ctx: CliContext, options: ProfileOptions): Promise<void>;
-  log(ctx: CliContext, service: string): Promise<void>;
-  info(ctx: CliContext, service: string): Promise<void>;
+  log(ctx: CliContext, service: string, options: LogOptions): Promise<void>;
+  info(ctx: CliContext, service: string, options: JsonOptions): Promise<void>;
   doctor(ctx: CliContext): Promise<void>;
+}
+
+/** Options shared by commands that support a machine-readable JSON output. */
+export interface JsonOptions {
+  readonly json?: boolean;
+}
+
+/** Options for `devman log`. */
+export interface LogOptions {
+  /** Number of historical lines to print before (optionally) following. */
+  readonly tail?: string;
+  /** Print the historical tail and exit instead of streaming new lines. */
+  readonly follow?: boolean;
 }
 
 /** Program name shown in help output. */
@@ -65,8 +78,9 @@ export function buildProgram(handlers: CommandHandlers): Command {
   program
     .command('status')
     .description('show status of all services')
-    .action(async (_options: unknown, command: Command) => {
-      await handlers.status(contextFor(command));
+    .option('--json', 'print machine-readable JSON instead of a table')
+    .action(async (options: JsonOptions, command: Command) => {
+      await handlers.status(contextFor(command), options);
     });
 
   program
@@ -88,16 +102,23 @@ export function buildProgram(handlers: CommandHandlers): Command {
   program
     .command('log <service>')
     .description('stream logs for a service')
-    .action(async (service: string, _options: unknown, command: Command) => {
-      await handlers.log(contextFor(command), service);
-    });
+    .option('--tail <n>', 'number of historical lines to print', '100')
+    .option('--no-follow', 'print the tail and exit instead of streaming')
+    .action(
+      async (service: string, options: LogOptions, command: Command) => {
+        await handlers.log(contextFor(command), service, options);
+      },
+    );
 
   program
     .command('info <service>')
     .description('show detailed info for a service')
-    .action(async (service: string, _options: unknown, command: Command) => {
-      await handlers.info(contextFor(command), service);
-    });
+    .option('--json', 'print machine-readable JSON instead of a table')
+    .action(
+      async (service: string, options: JsonOptions, command: Command) => {
+        await handlers.info(contextFor(command), service, options);
+      },
+    );
 
   program
     .command('doctor')

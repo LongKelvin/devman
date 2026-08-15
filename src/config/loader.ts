@@ -7,11 +7,13 @@
  * service.
  */
 import {
+  ConfigInvalidError,
   ConfigNotFoundError,
   DependencyMissingError,
   ServiceNotFoundError,
 } from '../utils/errors.js';
 import { pathExists, readJsonFile } from '../utils/fs.js';
+import { DependencyGraph } from '../service/dependencyGraph.js';
 import type { DevmanPaths } from './paths.js';
 import { parseProfilesDocument, parseServicesDocument } from './validate.js';
 import type { ProfileDefinition, ServiceDefinition } from '../types/index.js';
@@ -95,9 +97,30 @@ function assertReferentialIntegrity(
 }
 
 /**
+ * Read and parse a config JSON file, wrapping a malformed-JSON failure as a
+ * {@link ConfigInvalidError} so every config problem — schema, references, or
+ * syntax — surfaces through the same hinted, exit-code-1 path.
+ */
+async function readConfigJson<T>(path: string): Promise<T> {
+  try {
+    return await readJsonFile<T>(path);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new ConfigInvalidError(
+        `${path} is not valid JSON: ${error.message}`,
+        error,
+      );
+    }
+    throw error;
+  }
+}
+
+/**
  * Load and validate configuration from the resolved {@link DevmanPaths}.
  *
- * `services.json` is required; `profiles.json` is optional.
+ * `services.json` is required; `profiles.json` is optional. Validation
+ * includes the dependency graph (a cycle throws {@link DependencyCycleError}
+ * here, not only when `start` walks it), so `doctor` catches it too.
  */
 export async function loadConfig(paths: DevmanPaths): Promise<DevmanConfig> {
   if (!(await pathExists(paths.servicesFile))) {
@@ -105,13 +128,15 @@ export async function loadConfig(paths: DevmanPaths): Promise<DevmanConfig> {
   }
 
   const services = parseServicesDocument(
-    await readJsonFile<unknown>(paths.servicesFile),
+    await readConfigJson<unknown>(paths.servicesFile),
   );
 
   const profiles = (await pathExists(paths.profilesFile))
-    ? parseProfilesDocument(await readJsonFile<unknown>(paths.profilesFile))
+    ? parseProfilesDocument(await readConfigJson<unknown>(paths.profilesFile))
     : [];
 
   assertReferentialIntegrity(services, profiles);
+  // Throws DependencyCycleError if dependsOn edges form a cycle.
+  new DependencyGraph(services).startOrder();
   return new DevmanConfig(services, profiles);
 }

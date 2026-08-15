@@ -88,6 +88,51 @@ describe('ProcessManager', () => {
     await pm.stopAll();
   });
 
+  it('stop() resolves promptly even mid-restart-backoff (does not hang)', async () => {
+    // Regression: stopping a crash-looping service while it's asleep in its
+    // restart backoff must not leave the exit-handling chain awaiting a
+    // timer that was cancelled out from under it.
+    const config = new DevmanConfig(
+      [
+        parseServiceDefinition({
+          id: 'crasher',
+          command: process.execPath,
+          args: ['-e', 'process.exit(1)'],
+          restart: { policy: 'on-failure', maxRetries: 5, delayMs: 10_000 },
+        }),
+      ],
+      [],
+    );
+    const pm = makeManager(config, dir);
+
+    await pm.start();
+    await delay(300); // let the first crash + restart schedule land
+    const stopped = pm.stop();
+    await expect(stopped).resolves.toBeDefined();
+    await pm.stopAll();
+  }, 5000);
+
+  it('does not report a service as running if it fails to spawn', async () => {
+    const config = new DevmanConfig(
+      [
+        parseServiceDefinition({
+          id: 'ghost',
+          command: 'this-binary-does-not-exist-xyz',
+        }),
+      ],
+      [],
+    );
+    const pm = makeManager(config, dir);
+
+    const started = await pm.start();
+    // Regression: start() must not claim success for a process that already
+    // died before the settle window elapsed.
+    expect(started[0]?.status).not.toBe('running');
+    expect(started[0]?.status).toBe('failed');
+
+    await pm.stopAll();
+  });
+
   it('starts dependencies before dependents', async () => {
     const config = new DevmanConfig(
       [
