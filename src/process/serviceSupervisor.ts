@@ -10,7 +10,7 @@
 import { ManagedProcess, type ExitInfo } from './managedProcess.js';
 import { ServiceLogWriter, logFilePath } from '../logging/serviceLogger.js';
 import { HealthChecker } from '../service/healthChecker.js';
-import { now } from '../utils/time.js';
+import { delay, now } from '../utils/time.js';
 import type { EventBus } from '../runtime/events.js';
 import type { Logger } from '../logging/logger.js';
 import type { RuntimeStateStore } from '../runtime/state.js';
@@ -20,6 +20,14 @@ import type { LogStreamName } from '../logging/serviceLogger.js';
 
 /** How long a service is given to exit gracefully before SIGKILL. */
 const DEFAULT_STOP_GRACE_MS = 5000;
+
+/**
+ * How long to wait after spawning before trusting a service is actually
+ * running. A command that fails to spawn (bad executable, missing cwd) fails
+ * asynchronously — without this window, `start` would report success and a
+ * live-looking pid for a process that was already dead.
+ */
+const SPAWN_SETTLE_MS = 150;
 
 /** Collaborators a supervisor needs. */
 export interface SupervisorDependencies {
@@ -42,6 +50,13 @@ export class ServiceSupervisor {
   private stopRequested = false;
   /** Guards against overlapping restart timers. */
   private restartTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Resolves the in-flight restart backoff wait. Cleared alongside
+   * `restartTimer`; `stop()` calls it directly so cancelling the timer
+   * doesn't leave `maybeRestart` — and therefore `exitHandled` — awaiting a
+   * promise that will now never settle on its own.
+   */
+  private restartResolve: (() => void) | undefined;
   /**
    * Resolves when the in-flight exit handler (state persistence + restart
    * decision) has finished. `stop()` awaits this so callers can rely on runtime
@@ -87,6 +102,13 @@ export class ServiceSupervisor {
       clearTimeout(this.restartTimer);
       this.restartTimer = undefined;
     }
+    if (this.restartResolve) {
+      // Unblock maybeRestart's backoff wait immediately; it checks
+      // stopRequested right after and bails without respawning.
+      const resolve = this.restartResolve;
+      this.restartResolve = undefined;
+      resolve();
+    }
     const process = this.process;
     if (!process) {
       // Nothing running, but an exit handler may still be settling state.
@@ -126,6 +148,24 @@ export class ServiceSupervisor {
     this.process = proc;
 
     const pid = proc.start();
+
+    // Give the OS a brief window to report an immediate spawn failure (a
+    // missing executable, a missing cwd) before declaring the service
+    // "running". A crash inside this window is handled entirely by the
+    // onExit callback above — including recording the terminal state and
+    // deciding whether to restart — so we only need to check whether the
+    // process is *still* alive once the window has passed.
+    await delay(SPAWN_SETTLE_MS);
+    if (!this.running) {
+      // Already exited — onExit already recorded the correct terminal state
+      // (and possibly started a restart). Don't clobber it with a stale
+      // "running" write.
+      this.logger.warn('Service exited before startup could be confirmed', {
+        pid,
+      });
+      return;
+    }
+
     const at = now();
     await this.deps.state.updateService(
       this.service.id,
@@ -273,10 +313,15 @@ export class ServiceSupervisor {
     );
 
     await new Promise<void>((resolve) => {
-      this.restartTimer = setTimeout(resolve, delayMs);
+      this.restartResolve = resolve;
+      this.restartTimer = setTimeout(() => {
+        this.restartResolve = undefined;
+        resolve();
+      }, delayMs);
     });
     this.restartTimer = undefined;
-    // A stop may have been requested during the delay.
+    // A stop may have been requested during the delay (in which case
+    // stop() already resolved this promise directly).
     if (this.stopRequested) return;
     await this.spawn();
   }
