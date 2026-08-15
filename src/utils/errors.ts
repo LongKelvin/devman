@@ -60,7 +60,7 @@ export class ConfigInvalidError extends DevmanError {
 export class ServiceNotFoundError extends DevmanError {
   constructor(id: string) {
     super('SERVICE_NOT_FOUND', `Unknown service: "${id}".`, {
-      hint: 'Run `start-dev --status` to list configured services.',
+      hint: 'Run `devman status` to list configured services.',
     });
   }
 }
@@ -91,7 +91,7 @@ export class DependencyMissingError extends DevmanError {
 export class DaemonNotRunningError extends DevmanError {
   constructor() {
     super('DAEMON_NOT_RUNNING', 'The devman daemon is not running.', {
-      hint: 'Start it with `start-dev`.',
+      hint: 'Start it with `devman start`.',
     });
   }
 }
