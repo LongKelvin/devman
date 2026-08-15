@@ -56,7 +56,7 @@ export async function acquirePidFile(pidFile: string): Promise<void> {
     throw new DevmanError(
       'DAEMON_ALREADY_RUNNING',
       `A devman daemon is already running (pid ${existing}).`,
-      { hint: 'Stop it with `devman stop` before starting a new one.' },
+      { hint: 'Stop it with `start-dev --stop` before starting a new one.' },
     );
   }
   await ensureDir(dirname(pidFile));
