@@ -164,6 +164,10 @@ npm run build       # compile to dist/
 npm test            # vitest
 ```
 
+For a full local QA pass — an isolated test project, fixture services, and
+a checklist covering every command and failure case — see
+[TESTING.md](./TESTING.md).
+
 ## Architecture
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md). Modules under `src/` map to the
