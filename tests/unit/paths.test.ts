@@ -41,4 +41,17 @@ describe('resolvePaths', () => {
       );
     }
   });
+
+  it('gives sibling homes distinct socket paths even when their paths share a long common prefix', () => {
+    // Regression test: a truncated hash/hex encoding of the runtime dir can
+    // collide when two homes share a path prefix (e.g. sibling projects under
+    // the same parent folder), routing one project's CLI onto another
+    // project's daemon. The full path must always be distinguished.
+    const a = resolvePaths({ home: '/work/projects/alpha', env: {} });
+    const b = resolvePaths({ home: '/work/projects/beta', env: {} });
+    const c = resolvePaths({ home: '/work/projects/alpha-2', env: {} });
+    expect(a.socketPath).not.toBe(b.socketPath);
+    expect(a.socketPath).not.toBe(c.socketPath);
+    expect(b.socketPath).not.toBe(c.socketPath);
+  });
 });
