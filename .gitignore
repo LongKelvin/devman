@@ -4,8 +4,8 @@ coverage/
 *.log
 
 # Runtime artifacts (daemon PID, sockets, state, live logs)
-/runtime/
-/logs/
+runtime/
+logs/
 
 # Local, non-example configuration
 config/services.json
