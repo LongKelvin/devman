@@ -13,6 +13,7 @@ import { ensureDaemon, pingDaemon } from '../daemon/bootstrap.js';
 import { callDaemon, withDaemon } from './daemonClient.js';
 import { printInfo, printSuccess } from './render.js';
 import { renderServiceInfo, renderStatusTable } from '../ui/statusTable.js';
+import { ServiceStartFailedError } from '../utils/errors.js';
 import type { CliContext } from './context.js';
 import type {
   CommandHandlers,
@@ -25,6 +26,17 @@ import type {
   LifecycleResult,
   StatusResult,
 } from '../ipc/protocol.js';
+import type { ServiceRuntime } from '../types/index.js';
+
+/**
+ * Ids of services that did not end up `running`. Used after `start`/`restart`
+ * to decide whether the command actually succeeded — the daemon reports each
+ * service's outcome individually rather than failing the whole request, so
+ * the CLI is where "did this actually work" gets decided.
+ */
+function notRunning(services: readonly ServiceRuntime[]): string[] {
+  return services.filter((s) => s.status !== 'running').map((s) => s.id);
+}
 
 /**
  * Resolve the `--profile` option to explicit service ids by consulting the
@@ -97,18 +109,30 @@ async function restart(
   const selector = await resolveSelector(ctx, options.profile);
   await ensureDaemon(ctx.paths, ctx.logger);
   const spinner = ora('Restarting services…').start();
+
+  let services: readonly ServiceRuntime[];
   try {
-    const { services } = await callDaemon<LifecycleResult>(
+    ({ services } = await callDaemon<LifecycleResult>(
       ctx.paths,
       'restart',
       selector,
       { timeoutMs: 60_000 },
-    );
-    spinner.succeed(`Restarted ${services.length} service(s).`);
+    ));
   } catch (error) {
     spinner.fail('Failed to restart services.');
     throw error;
   }
+
+  const failed = notRunning(services);
+  if (failed.length > 0) {
+    spinner.fail(
+      `Restarted ${services.length - failed.length}/${services.length} service(s); ${failed.length} failed.`,
+    );
+    await showStatus(ctx);
+    throw new ServiceStartFailedError(failed);
+  }
+
+  spinner.succeed(`Restarted ${services.length} service(s).`);
   await showStatus(ctx);
 }
 
@@ -125,19 +149,30 @@ async function startDefault(
     throw error;
   }
 
+  let services: readonly ServiceRuntime[];
   try {
     const selector = await resolveSelector(ctx, options.profile);
-    const { services } = await callDaemon<LifecycleResult>(
+    ({ services } = await callDaemon<LifecycleResult>(
       ctx.paths,
       'start',
       selector,
       { timeoutMs: 60_000 },
-    );
-    spinner.succeed(`Started ${services.length} service(s).`);
+    ));
   } catch (error) {
     spinner.fail('Failed to start services.');
     throw error;
   }
+
+  const failed = notRunning(services);
+  if (failed.length > 0) {
+    spinner.fail(
+      `Started ${services.length - failed.length}/${services.length} service(s); ${failed.length} failed to start.`,
+    );
+    await showStatus(ctx);
+    throw new ServiceStartFailedError(failed);
+  }
+
+  spinner.succeed(`Started ${services.length} service(s).`);
   await showStatus(ctx);
 }
 

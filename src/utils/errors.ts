@@ -17,6 +17,7 @@ export type ErrorCode =
   | 'IPC_ERROR'
   | 'IPC_TIMEOUT'
   | 'PROCESS_START_FAILED'
+  | 'SERVICE_START_FAILED'
   | 'INTERNAL';
 
 /** Base class for all devman errors. */
@@ -93,6 +94,24 @@ export class DaemonNotRunningError extends DevmanError {
     super('DAEMON_NOT_RUNNING', 'The devman daemon is not running.', {
       hint: 'Start it with `devman start`.',
     });
+  }
+}
+
+/**
+ * One or more services did not end up `running` after a `start`/`restart`
+ * request. The daemon itself doesn't fail this request — each service is
+ * supervised independently — but the CLI command that asked for it should,
+ * so a bad deploy is a non-zero exit rather than a table you have to read.
+ */
+export class ServiceStartFailedError extends DevmanError {
+  constructor(failedIds: readonly string[]) {
+    super(
+      'SERVICE_START_FAILED',
+      failedIds.length === 1
+        ? `Service "${failedIds[0]}" failed to start.`
+        : `${failedIds.length} services failed to start: ${failedIds.join(', ')}.`,
+      { hint: 'Run `devman log <service>` to see why.' },
+    );
   }
 }
 
