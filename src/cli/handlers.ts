@@ -14,7 +14,12 @@ import { callDaemon, withDaemon } from './daemonClient.js';
 import { printInfo, printSuccess } from './render.js';
 import { renderServiceInfo, renderStatusTable } from '../ui/statusTable.js';
 import type { CliContext } from './context.js';
-import type { CommandHandlers, ProfileOptions } from './program.js';
+import type {
+  CommandHandlers,
+  JsonOptions,
+  LogOptions,
+  ProfileOptions,
+} from './program.js';
 import type {
   InfoResult,
   LifecycleResult,
@@ -35,8 +40,15 @@ async function resolveSelector(
   return { ids: config.resolveProfile(profile) };
 }
 
-async function showStatus(ctx: CliContext): Promise<void> {
+async function showStatus(
+  ctx: CliContext,
+  options: JsonOptions = {},
+): Promise<void> {
   const { state } = await callDaemon<StatusResult>(ctx.paths, 'status', {});
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
+    return;
+  }
   process.stdout.write(`${renderStatusTable(state, now())}\n`);
 }
 
@@ -129,21 +141,46 @@ async function startDefault(
   await showStatus(ctx);
 }
 
-async function showInfo(ctx: CliContext, serviceId: string): Promise<void> {
+async function showInfo(
+  ctx: CliContext,
+  serviceId: string,
+  options: JsonOptions = {},
+): Promise<void> {
   const { runtime } = await callDaemon<InfoResult>(ctx.paths, 'info', {
     serviceId,
   });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(runtime, null, 2)}\n`);
+    return;
+  }
   process.stdout.write(`${renderServiceInfo(runtime)}\n`);
 }
 
-async function streamLogs(ctx: CliContext, serviceId: string): Promise<void> {
+/** Parse `--tail <n>`, falling back to the daemon's default on a bad value. */
+function parseTail(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
+}
+
+async function streamLogs(
+  ctx: CliContext,
+  serviceId: string,
+  options: LogOptions = {},
+): Promise<void> {
+  // Commander's `--no-follow` sets `follow: false`; absent, it defaults to
+  // `true` (stream forever), matching the pre-existing behaviour.
+  const follow = options.follow ?? true;
+  const tail = parseTail(options.tail);
   await withDaemon(ctx.paths, async (client) => {
     await client.call(
       'logs',
-      { serviceId, follow: true },
+      { serviceId, follow, ...(tail !== undefined ? { tail } : {}) },
       {
-        // Follow streams are open-ended; disable the response timeout.
-        timeoutMs: 0,
+        // Follow streams are open-ended; disable the response timeout. A
+        // bounded (`--no-follow`) request completes on its own once the
+        // historical tail has been sent, so the default timeout applies.
+        ...(follow ? { timeoutMs: 0 } : {}),
         onStream: (chunk) => process.stdout.write(`${String(chunk)}\n`),
       },
     );
