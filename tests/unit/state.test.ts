@@ -66,4 +66,34 @@ describe('RuntimeStateStore', () => {
   it('returns null when reading a missing state file', async () => {
     expect(await readRuntimeState(join(dir, 'missing.json'))).toBeNull();
   });
+
+  it('serialises concurrent updates instead of racing on rename', async () => {
+    // Regression: two services changing state in the same tick (e.g. two
+    // health checks resolving together) used to fire overlapping
+    // writeJsonFileAtomic calls at the same destination, which can EPERM on
+    // Windows when two renames land close together. Firing many concurrent
+    // updateService calls and awaiting them all should never reject and
+    // should leave every patch reflected in the final file.
+    const stateFile = join(dir, 'state.json');
+    const store = RuntimeStateStore.create({
+      stateFile,
+      daemonPid: 1,
+      daemonStartedAt: 10,
+      socketPath: '/tmp/x.sock',
+      serviceIds: ['a', 'b', 'c'],
+    });
+
+    await Promise.all([
+      store.updateService('a', { status: 'running', pid: 1 }, 1),
+      store.updateService('b', { status: 'running', pid: 2 }, 2),
+      store.updateService('c', { status: 'running', pid: 3 }, 3),
+      store.updateService('a', { health: 'healthy' }, 4),
+      store.updateService('b', { health: 'healthy' }, 5),
+    ]);
+
+    const onDisk = await readRuntimeState(stateFile);
+    expect(onDisk?.services.a).toMatchObject({ status: 'running', pid: 1 });
+    expect(onDisk?.services.b).toMatchObject({ status: 'running', pid: 2 });
+    expect(onDisk?.services.c).toMatchObject({ status: 'running', pid: 3 });
+  });
 });

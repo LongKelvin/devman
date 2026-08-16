@@ -193,7 +193,18 @@ export class ServiceSupervisor {
     this.health = new HealthChecker(
       this.service.healthCheck,
       { isProcessRunning: () => this.running },
-      (health) => void this.onHealthChanged(health),
+      (health) => {
+        // Fire-and-forget from the health checker's perspective, but a
+        // rejection here must never become an unhandled rejection — that
+        // would crash the whole daemon (and every other supervised service)
+        // over a transient state-persist error. Log and move on; the next
+        // health change or state update will retry the write.
+        this.onHealthChanged(health).catch((error: unknown) => {
+          this.logger.error('Failed to persist health change', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      },
     );
     this.health.start();
   }

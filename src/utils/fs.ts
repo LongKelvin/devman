@@ -16,10 +16,23 @@ export async function readJsonFile<T>(path: string): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
+/** Rename error codes that are worth a short retry — usually a transient
+ * handle held by an antivirus scanner, search indexer, or a concurrent
+ * reader, not a real permissions problem. Overwhelmingly a Windows quirk:
+ * POSIX `rename(2)` is atomic and doesn't fail this way. */
+const TRANSIENT_RENAME_CODES = new Set(['EPERM', 'EBUSY']);
+
+const RENAME_RETRIES = 5;
+const RENAME_RETRY_DELAY_MS = 20;
+
 /**
  * Write JSON atomically: serialise to a temp file in the same directory, then
  * rename over the target. Rename is atomic on POSIX filesystems, so readers
  * never observe a half-written file.
+ *
+ * Callers must not invoke this concurrently for the same `path` — pair it
+ * with a per-path write queue (see `RuntimeStateStore.persist`) so renames
+ * onto the same destination never race each other.
  */
 export async function writeJsonFileAtomic(
   path: string,
@@ -30,7 +43,31 @@ export async function writeJsonFileAtomic(
   // from colliding on one temp file (which would race on rename).
   const tmp = `${path}.${process.pid}.${nextTmpSeq()}.tmp`;
   await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  await rename(tmp, path);
+  await renameWithRetry(tmp, path);
+}
+
+/**
+ * `rename` with a short retry-with-backoff on transient failures. Windows can
+ * throw `EPERM`/`EBUSY` when the destination is momentarily held open by
+ * another process (antivirus, search indexing) even when callers are
+ * otherwise serialised — a real permissions error will still fail after the
+ * retries are exhausted.
+ */
+async function renameWithRetry(tmp: string, dest: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(tmp, dest);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt >= RENAME_RETRIES || !code || !TRANSIENT_RENAME_CODES.has(code)) {
+        throw error;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, RENAME_RETRY_DELAY_MS * attempt),
+      );
+    }
+  }
 }
 
 let tmpSeq = 0;
