@@ -16,6 +16,11 @@ import { ProcessManager } from '../process/processManager.js';
 import { acquirePidFile, releasePidFile } from './pidfile.js';
 import { registerLifecycleHandlers } from './handlers.js';
 import { now } from '../utils/time.js';
+import {
+  registryFilePath,
+  removeRegistryEntry,
+  upsertRegistryEntry,
+} from '../config/registry.js';
 import type { Logger } from '../logging/logger.js';
 import type { DevmanConfig } from '../config/loader.js';
 import type { DevmanPaths } from '../config/paths.js';
@@ -29,6 +34,8 @@ export interface DaemonDependencies {
   readonly paths: DevmanPaths;
   readonly config: DevmanConfig;
   readonly logger: Logger;
+  /** Global instance-registry file. Defaults to `~/.devman/registry.json`. */
+  readonly registryFile?: string;
 }
 
 /**
@@ -41,6 +48,8 @@ export class Daemon {
   private readonly ipc: IpcServer;
   private readonly state: RuntimeStateStore;
   private readonly processes: ProcessManager;
+  private readonly registryFile: string;
+  private readonly startedAt: number;
   private shuttingDown = false;
   private readonly stopped: Promise<void>;
   private resolveStopped: () => void = () => {};
@@ -50,11 +59,12 @@ export class Daemon {
       this.resolveStopped = resolve;
     });
     this.logger = deps.logger.child('daemon');
-    const startedAt = now();
+    this.registryFile = deps.registryFile ?? registryFilePath();
+    this.startedAt = now();
     this.state = RuntimeStateStore.create({
       stateFile: deps.paths.stateFile,
       daemonPid: process.pid,
-      daemonStartedAt: startedAt,
+      daemonStartedAt: this.startedAt,
       socketPath: deps.paths.socketPath,
       serviceIds: deps.config.services.map((s) => s.id),
     });
@@ -98,10 +108,33 @@ export class Daemon {
     await this.state.flush();
     this.installSignalHandlers();
     await this.ipc.start();
+    await this.registerInstance();
     this.logger.info('Daemon started', {
       pid: process.pid,
       services: this.deps.config.services.length,
     });
+  }
+
+  /**
+   * Best-effort: record this daemon in the global instance registry so
+   * `devman list` can find it without knowing this `--home` up front. A
+   * failure here (e.g. no permission on the user's home directory) must
+   * never stop the daemon from serving its actual job.
+   */
+  private async registerInstance(): Promise<void> {
+    try {
+      await upsertRegistryEntry(this.registryFile, {
+        home: this.deps.paths.home,
+        pid: process.pid,
+        socketPath: this.deps.paths.socketPath,
+        startedAt: this.startedAt,
+        version: DAEMON_VERSION,
+      });
+    } catch (error) {
+      this.logger.warn('Failed to register in global instance registry', {
+        error: (error as Error).message,
+      });
+    }
   }
 
   /** Resolves when the daemon has fully shut down. */
@@ -132,6 +165,13 @@ export class Daemon {
     await this.ipc.stop();
     this.events.clear();
     await releasePidFile(this.deps.paths.pidFile);
+    try {
+      await removeRegistryEntry(this.registryFile, this.deps.paths.home);
+    } catch (error) {
+      this.logger.warn('Failed to deregister from global instance registry', {
+        error: (error as Error).message,
+      });
+    }
     this.logger.info('Daemon stopped');
     this.resolveStopped();
   }
@@ -165,6 +205,7 @@ export class Daemon {
       processes: this.processes,
       events: this.events,
       paths: this.deps.paths,
+      state: this.state,
     });
   }
 

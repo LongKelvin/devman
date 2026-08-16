@@ -10,6 +10,7 @@ import { logFilePath, readLogTail } from '../logging/serviceLogger.js';
 import type { IpcServer } from '../ipc/server.js';
 import type { ProcessManager } from '../process/processManager.js';
 import type { EventBus } from '../runtime/events.js';
+import type { RuntimeStateStore } from '../runtime/state.js';
 import type { DevmanPaths } from '../config/paths.js';
 import type {
   InfoResult,
@@ -27,6 +28,7 @@ export interface LifecycleHandlerDependencies {
   readonly processes: ProcessManager;
   readonly events: EventBus;
   readonly paths: DevmanPaths;
+  readonly state: RuntimeStateStore;
 }
 
 /** Resolve a selector to explicit service ids (empty = manager's default). */
@@ -42,12 +44,26 @@ export function registerLifecycleHandlers(
   deps: LifecycleHandlerDependencies,
 ): void {
   ipc.handle('start', async (params): Promise<LifecycleResult> => {
+    const selector = (params ?? {}) as ServiceSelector;
     const services = await deps.processes.start(selectorToIds(params));
+    // Informational only: records which profile this start targeted (or
+    // `null` for an unscoped start) so `status`/`doctor`/`list` can show it.
+    await deps.state.setActiveProfile(selector.profile ?? null);
     return { services };
   });
 
   ipc.handle('stop', async (params): Promise<LifecycleResult> => {
+    const selector = (params ?? {}) as ServiceSelector;
     const services = await deps.processes.stop(selectorToIds(params));
+    // Only clear the recorded profile if this stop targeted exactly the one
+    // that's active — a scoped stop of some other profile (or an unscoped
+    // stop that the caller turns into a full shutdown) shouldn't erase it.
+    if (
+      selector.profile &&
+      deps.state.snapshot().activeProfile === selector.profile
+    ) {
+      await deps.state.setActiveProfile(null);
+    }
     return { services };
   });
 

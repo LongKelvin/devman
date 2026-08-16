@@ -29,6 +29,7 @@ export interface CommandHandlers {
   log(ctx: CliContext, service: string, options: LogOptions): Promise<void>;
   info(ctx: CliContext, service: string, options: JsonOptions): Promise<void>;
   doctor(ctx: CliContext): Promise<void>;
+  list(ctx: CliContext, options: JsonOptions): Promise<void>;
 }
 
 /** Options shared by commands that support a machine-readable JSON output. */
@@ -86,7 +87,10 @@ export function buildProgram(handlers: CommandHandlers): Command {
   program
     .command('stop')
     .description('stop all services and the daemon')
-    .option('-p, --profile <profile>', 'limit the stop to a profile (leaves daemon running)')
+    .option(
+      '-p, --profile <profile>',
+      'limit the stop to a profile (leaves daemon running)',
+    )
     .action(async (options: ProfileOptions, command: Command) => {
       await handlers.stop(contextFor(command), options);
     });
@@ -104,27 +108,34 @@ export function buildProgram(handlers: CommandHandlers): Command {
     .description('stream logs for a service')
     .option('--tail <n>', 'number of historical lines to print', '100')
     .option('--no-follow', 'print the tail and exit instead of streaming')
-    .action(
-      async (service: string, options: LogOptions, command: Command) => {
-        await handlers.log(contextFor(command), service, options);
-      },
-    );
+    .action(async (service: string, options: LogOptions, command: Command) => {
+      await handlers.log(contextFor(command), service, options);
+    });
 
   program
     .command('info <service>')
     .description('show detailed info for a service')
     .option('--json', 'print machine-readable JSON instead of a table')
-    .action(
-      async (service: string, options: JsonOptions, command: Command) => {
-        await handlers.info(contextFor(command), service, options);
-      },
-    );
+    .action(async (service: string, options: JsonOptions, command: Command) => {
+      await handlers.info(contextFor(command), service, options);
+    });
 
   program
     .command('doctor')
     .description('diagnose configuration and daemon health')
     .action(async (_options: unknown, command: Command) => {
       await handlers.doctor(contextFor(command));
+    });
+
+  program
+    .command('list')
+    .alias('ls')
+    .description(
+      'list every devman instance running on this machine, across all --home directories',
+    )
+    .option('--json', 'print machine-readable JSON instead of a table')
+    .action(async (options: JsonOptions, command: Command) => {
+      await handlers.list(contextFor(command), options);
     });
 
   return program;

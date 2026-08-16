@@ -17,8 +17,9 @@ import { DevmanError } from '../utils/errors.js';
 import { readLiveDaemonPid } from './pidfile.js';
 import { SocketClientTransport } from '../ipc/socketTransport.js';
 import { IpcClient } from '../ipc/client.js';
-import type { PingResult } from '../ipc/protocol.js';
+import type { PingResult, StatusResult } from '../ipc/protocol.js';
 import type { DevmanPaths } from '../config/paths.js';
+import type { RuntimeState } from '../types/index.js';
 import type { Logger } from '../logging/logger.js';
 
 /** Absolute path to the compiled daemon entry point. */
@@ -26,9 +27,14 @@ function daemonEntryPath(): string {
   return fileURLToPath(new URL('./index.js', import.meta.url));
 }
 
-/** Attempt a single `ping`, returning the result or `null` if unreachable. */
+/**
+ * Attempt a single `ping`, returning the result or `null` if unreachable.
+ * Only needs `socketPath` — accepting the narrower shape lets callers that
+ * only have a bare socket path (e.g. a registry entry for some other
+ * `--home`, see `devman list`) reuse this without a full {@link DevmanPaths}.
+ */
 export async function pingDaemon(
-  paths: DevmanPaths,
+  paths: Pick<DevmanPaths, 'socketPath'>,
 ): Promise<PingResult | null> {
   let client: IpcClient | undefined;
   try {
@@ -36,6 +42,30 @@ export async function pingDaemon(
       new SocketClientTransport(paths.socketPath),
     );
     return await client.call<PingResult>('ping', {}, { timeoutMs: 2000 });
+  } catch {
+    return null;
+  } finally {
+    client?.close();
+  }
+}
+
+/**
+ * Fetch a daemon's runtime state given only its socket path, or `null` if
+ * unreachable. Used by `devman list` to summarise every registered instance
+ * without needing each one's `--home`/config on disk.
+ */
+export async function fetchStatus(
+  socketPath: string,
+): Promise<RuntimeState | null> {
+  let client: IpcClient | undefined;
+  try {
+    client = await IpcClient.connect(new SocketClientTransport(socketPath));
+    const result = await client.call<StatusResult>(
+      'status',
+      {},
+      { timeoutMs: 2000 },
+    );
+    return result.state;
   } catch {
     return null;
   } finally {

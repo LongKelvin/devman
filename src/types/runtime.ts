@@ -54,6 +54,12 @@ export interface RuntimeState {
   readonly daemonStartedAt: number;
   /** Absolute path to the IPC socket the daemon is listening on. */
   readonly socketPath: string;
+  /**
+   * Name of the profile passed to the most recent `start`, or `null` for an
+   * unscoped start (all enabled services) or before any start. Informational
+   * only — `services` below is always the authoritative runtime state.
+   */
+  readonly activeProfile: string | null;
   /** Runtime record per service, keyed by service ID. */
   readonly services: Readonly<Record<string, ServiceRuntime>>;
 }

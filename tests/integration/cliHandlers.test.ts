@@ -45,7 +45,12 @@ describe('start/restart handlers', () => {
     });
     const paths = resolvePaths({ home: dir, env: {} });
     const config = await loadConfig(paths);
-    daemon = new Daemon({ paths, config, logger: new NullLogger() });
+    daemon = new Daemon({
+      paths,
+      config,
+      logger: new NullLogger(),
+      registryFile: join(dir, 'registry.json'),
+    });
     await daemon.start();
 
     const ctx: CliContext = { paths, logger: new NullLogger() };
@@ -62,7 +67,12 @@ describe('start/restart handlers', () => {
     });
     const paths = resolvePaths({ home: dir, env: {} });
     const config = await loadConfig(paths);
-    daemon = new Daemon({ paths, config, logger: new NullLogger() });
+    daemon = new Daemon({
+      paths,
+      config,
+      logger: new NullLogger(),
+      registryFile: join(dir, 'registry.json'),
+    });
     await daemon.start();
 
     const ctx: CliContext = { paths, logger: new NullLogger() };

@@ -9,7 +9,8 @@ owns your dev processes; a thin **CLI** (`devman`) talks to it over IPC.
 > restart policies, plus periodic health checks (process/tcp/http). All commands
 > work: `devman start`, `devman status`, `devman stop`, `devman restart`,
 > `devman log <svc>` (live streaming), `devman info <svc>`, `devman doctor`,
-> plus `--profile <name>` scoping.
+> `devman list` (every instance on the machine), plus `--profile <name>`
+> scoping.
 
 ## Why
 
@@ -67,19 +68,47 @@ Requires Node.js 20+. Works on **macOS, Linux, and Windows** (Node.js 20+).
 
 ## Commands
 
-| Command                 | Description                              |
-| ----------------------- | ---------------------------------------- |
-| `devman` / `devman start`| Start all enabled services (via daemon) |
-| `devman status`         | Show status of all services              |
-| `devman stop`           | Stop all services and the daemon         |
-| `devman restart`        | Restart all services                     |
-| `devman log <svc>`      | Stream logs for a service                |
-| `devman info <svc>`     | Show detailed info for a service         |
-| `devman doctor`         | Diagnose configuration and daemon health |
+| Command                   | Description                                                                 |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `devman` / `devman start` | Start all enabled services (via daemon)                                     |
+| `devman status`           | Show status of all services                                                 |
+| `devman stop`             | Stop all services and the daemon                                            |
+| `devman restart`          | Restart all services                                                        |
+| `devman log <svc>`        | Stream logs for a service                                                   |
+| `devman info <svc>`       | Show detailed info for a service                                            |
+| `devman doctor`           | Diagnose configuration and daemon health                                    |
+| `devman list` (`ls`)      | List every devman instance on this machine, across all `--home` directories |
 
 Global options: `--home <dir>`, `--config <dir>`, `-v, --verbose`. The
 `--profile <name>` option on `start`, `stop`, and `restart` scopes the action to
-a profile's services (a scoped `stop` leaves the daemon running).
+a profile's services (a scoped `stop` leaves the daemon running). The profile
+passed to `start` is recorded as the daemon's _active profile_ and shown by
+`status`, `doctor`, and `list` — informational only, it never affects which
+services are actually running.
+
+### Working with several projects at once
+
+Every `--home` is a fully isolated instance (its own config, logs, runtime
+dir and IPC socket) — running `devman start` in `~/code/service-a` and
+`~/code/service-b` starts two independent daemons that never interfere with
+each other, each with its own dependency graph, restart policies and
+profiles. This is the intended way to juggle several projects that each
+define their own `services.json`.
+
+The one thing that _is_ shared across projects is a small registry at
+`~/.devman/registry.json` (override with `DEVMAN_REGISTRY_FILE`), used only
+by `devman list` to answer "what's running, and where" without `cd`-ing into
+every project:
+
+```text
+$ devman list
+HOME                        PID    PROFILE  SERVICES      UPTIME
+~/code/leadsheet-monolith   17892  infra    2/4 running   1m 12s
+~/code/other-service        13768  -        2/2 running   45s
+```
+
+Losing this file is harmless — a running daemon re-registers on its next
+`start`, and `devman list` prunes any entry whose process is no longer alive.
 
 ### How process management works
 
@@ -97,11 +126,11 @@ a profile's services (a scoped `stop` leaves the daemon running).
 
 `devman` runs on **macOS, Linux, and Windows**. Platform-specific behaviour:
 
-| Feature | macOS / Linux | Windows |
-| --- | --- | --- |
-| IPC transport | Unix domain socket (`runtime/daemon.sock`) | Named pipe (`\\.\pipe\devman-<hex>`) |
+| Feature       | macOS / Linux                                       | Windows                                  |
+| ------------- | --------------------------------------------------- | ---------------------------------------- |
+| IPC transport | Unix domain socket (`runtime/daemon.sock`)          | Named pipe (`\\.\pipe\devman-<hex>`)     |
 | Process group | `detached: true` + signal `-pid` (reaps whole tree) | Direct child kill via `TerminateProcess` |
-| Daemon spawn | Fully detached (`unref()`) | Fully detached (`unref()`) |
+| Daemon spawn  | Fully detached (`unref()`)                          | Fully detached (`unref()`)               |
 
 ## Configuration
 

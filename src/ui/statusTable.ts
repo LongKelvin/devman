@@ -81,6 +81,67 @@ export function renderStatusTable(state: RuntimeState, nowMs: number): string {
   return table.toString();
 }
 
+/** One row of `devman list` output — a single registered daemon instance. */
+export type RegistryRow =
+  | {
+      readonly home: string;
+      readonly pid: number;
+      readonly reachable: true;
+      readonly activeProfile: string | null;
+      readonly running: number;
+      readonly total: number;
+      readonly startedAt: number;
+    }
+  | {
+      readonly home: string;
+      readonly pid: number;
+      readonly reachable: false;
+    };
+
+/** Human-friendly uptime given a start timestamp. */
+function formatUptimeSince(startedAt: number, nowMs: number): string {
+  const seconds = Math.max(0, Math.floor((nowMs - startedAt) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+/** Render `devman list` output: every registered daemon on this machine. */
+export function renderRegistryTable(
+  rows: readonly RegistryRow[],
+  nowMs: number,
+): string {
+  const table = new Table({
+    head: ['HOME', 'PID', 'PROFILE', 'SERVICES', 'UPTIME'].map((h) =>
+      chalk.bold(h),
+    ),
+    style: { head: [], border: [] },
+  });
+
+  for (const row of rows) {
+    if (!row.reachable) {
+      table.push([
+        row.home,
+        String(row.pid),
+        chalk.red('unreachable'),
+        '-',
+        '-',
+      ]);
+      continue;
+    }
+    table.push([
+      row.home,
+      String(row.pid),
+      row.activeProfile ?? chalk.dim('-'),
+      `${row.running}/${row.total} running`,
+      formatUptimeSince(row.startedAt, nowMs),
+    ]);
+  }
+  return table.toString();
+}
+
 /** Render a single service's detail as a vertical key/value table. */
 export function renderServiceInfo(runtime: ServiceRuntime): string {
   const table = new Table({ style: { head: [], border: [] } });

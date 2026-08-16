@@ -60,7 +60,11 @@ async function renameWithRetry(tmp: string, dest: string): Promise<void> {
       return;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (attempt >= RENAME_RETRIES || !code || !TRANSIENT_RENAME_CODES.has(code)) {
+      if (
+        attempt >= RENAME_RETRIES ||
+        !code ||
+        !TRANSIENT_RENAME_CODES.has(code)
+      ) {
         throw error;
       }
       await new Promise((resolve) =>

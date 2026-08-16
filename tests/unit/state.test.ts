@@ -67,6 +67,25 @@ describe('RuntimeStateStore', () => {
     expect(await readRuntimeState(join(dir, 'missing.json'))).toBeNull();
   });
 
+  it('starts with no active profile and persists changes to it', async () => {
+    const stateFile = join(dir, 'state.json');
+    const store = RuntimeStateStore.create({
+      stateFile,
+      daemonPid: 1,
+      daemonStartedAt: 10,
+      socketPath: '/tmp/x.sock',
+      serviceIds: ['a'],
+    });
+    expect(store.snapshot().activeProfile).toBeNull();
+
+    await store.setActiveProfile('backend');
+    expect(store.snapshot().activeProfile).toBe('backend');
+    expect((await readRuntimeState(stateFile))?.activeProfile).toBe('backend');
+
+    await store.setActiveProfile(null);
+    expect(store.snapshot().activeProfile).toBeNull();
+  });
+
   it('serialises concurrent updates instead of racing on rename', async () => {
     // Regression: two services changing state in the same tick (e.g. two
     // health checks resolving together) used to fire overlapping

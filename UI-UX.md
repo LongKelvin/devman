@@ -1,6 +1,6 @@
 # Terminal UI/UX Guidelines
 
-`devman` is a CLI-only tool — there is no GUI, so the terminal output *is* the
+`devman` is a CLI-only tool — there is no GUI, so the terminal output _is_ the
 product. These are the conventions the codebase already follows in `src/cli/render.ts`
 and `src/ui/statusTable.ts`; keep new output consistent with them.
 
@@ -37,14 +37,14 @@ Adding new terminal output should extend these, not scatter
 
 ## Vocabulary
 
-| Element | Style | Example |
-| --- | --- | --- |
-| Success | `chalk.green('✔')` + message, stdout | `✔ Started 3 service(s).` |
-| Info | `chalk.cyan('ℹ')` + message, stdout | `ℹ Daemon is not running.` |
-| Error | `chalk.red.bold('✖ Error')` + message, stderr | `✖ Error Unknown service: "web".` |
-| Hint | `  chalk.yellow('hint:')` + text, indented under the error | `  hint: Run devman status to list configured services.` |
-| Debug cause | `chalk.dim(...)`, only under `DEVMAN_DEBUG` | `  cause: <stack trace>` |
-| Spinner | `ora(...)`, verb + ellipsis while pending, `.succeed()`/`.fail()` on settle | `⠋ Starting daemon…` → `✔ Daemon ready` |
+| Element     | Style                                                                       | Example                                                  |
+| ----------- | --------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Success     | `chalk.green('✔')` + message, stdout                                        | `✔ Started 3 service(s).`                                |
+| Info        | `chalk.cyan('ℹ')` + message, stdout                                         | `ℹ Daemon is not running.`                               |
+| Error       | `chalk.red.bold('✖ Error')` + message, stderr                               | `✖ Error Unknown service: "web".`                        |
+| Hint        | `  chalk.yellow('hint:')` + text, indented under the error                  | `  hint: Run devman status to list configured services.` |
+| Debug cause | `chalk.dim(...)`, only under `DEVMAN_DEBUG`                                 | `  cause: <stack trace>`                                 |
+| Spinner     | `ora(...)`, verb + ellipsis while pending, `.succeed()`/`.fail()` on settle | `⠋ Starting daemon…` → `✔ Daemon ready`                  |
 
 ### Errors
 
@@ -62,7 +62,7 @@ unexpected (bug, not user error).
 ### Spinners (ora)
 
 - Text is a present-participle phrase ending in an ellipsis: `"Starting
-  daemon…"`, `"Stopping all services and daemon…"`.
+daemon…"`, `"Stopping all services and daemon…"`.
 - Update `spinner.text` mid-flight for multi-step actions instead of
   stacking multiple spinners (see `startDefault` updating text once the
   daemon pid is known).
@@ -81,16 +81,21 @@ unexpected (bug, not user error).
   stopped service, `UPTIME` for anything not `running`).
 - `info <service>` reuses the same table primitive as a vertical key/value
   view rather than a bespoke layout, so the two views feel like one system.
+- `devman list` (`renderRegistryTable`) is the one table that spans multiple
+  `--home` directories at once: `HOME PID PROFILE SERVICES UPTIME`. An
+  unreachable instance (pid alive, daemon not answering) still gets a row —
+  `unreachable` in red — rather than being silently dropped, so a hung
+  daemon is visible instead of invisible.
 
 ### Colour mapping
 
-| Status/Health | Colour |
-| --- | --- |
-| `running` / `healthy` | green |
-| `starting` / `stopping` | yellow |
-| `failed` / `unhealthy` | red |
-| `stopped` | gray |
-| `configured` / `unknown` | dim |
+| Status/Health            | Colour |
+| ------------------------ | ------ |
+| `running` / `healthy`    | green  |
+| `starting` / `stopping`  | yellow |
+| `failed` / `unhealthy`   | red    |
+| `stopped`                | gray   |
+| `configured` / `unknown` | dim    |
 
 Keep this mapping exhaustive whenever a new status or health value is added
 — an unmapped value should still fall through to `dim`, never throw.

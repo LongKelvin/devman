@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolvePaths } from '../../src/config/paths.js';
 import { loadConfig } from '../../src/config/loader.js';
-import { ConfigInvalidError, DependencyCycleError } from '../../src/utils/errors.js';
+import {
+  ConfigInvalidError,
+  DependencyCycleError,
+} from '../../src/utils/errors.js';
 
 let dir: string;
 

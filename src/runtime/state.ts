@@ -76,6 +76,7 @@ export class RuntimeStateStore {
       daemonPid: init.daemonPid,
       daemonStartedAt: init.daemonStartedAt,
       socketPath: init.socketPath,
+      activeProfile: null,
       services,
     };
     return new RuntimeStateStore(init.stateFile, state);
@@ -117,6 +118,17 @@ export class RuntimeStateStore {
 
   /** Persist the current in-memory state to disk. Called once at startup. */
   async flush(): Promise<void> {
+    await this.persist();
+  }
+
+  /**
+   * Record which named profile the most recent `start` targeted (`null` for
+   * an unscoped start). Purely informational — surfaced by `status`/`doctor`
+   * so a project with several profiles doesn't leave the user guessing which
+   * one is currently up.
+   */
+  async setActiveProfile(profile: string | null): Promise<void> {
+    this.state = { ...this.state, activeProfile: profile };
     await this.persist();
   }
 
