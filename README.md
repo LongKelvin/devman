@@ -9,7 +9,8 @@ owns your dev processes; a thin **CLI** (`devman`) talks to it over IPC.
 > restart policies, plus periodic health checks (process/tcp/http). All commands
 > work: `devman start`, `devman status`, `devman stop`, `devman restart`,
 > `devman log <svc>` (live streaming), `devman info <svc>`, `devman doctor`,
-> plus `--profile <name>` scoping.
+> `devman list` (every instance on the machine), plus `--profile <name>`
+> scoping.
 
 ## Why
 
@@ -47,11 +48,17 @@ Requires Node.js 20+. Works on **macOS, Linux, and Windows** (Node.js 20+).
        {
          "id": "db",
          "command": "docker",
-         "args": ["compose", "up", "postgres"]
+         "args": ["compose", "up", "postgres"],
+         "healthCheck": { "type": "tcp", "port": 5432 }
        }
      ]
    }
    ```
+
+   Note the missing `-d`/`--detach`: this deliberately runs `docker compose
+up` in the _foreground_, as the process devman itself supervises — see
+   [Docker and other long-lived infra](#docker-and-other-long-lived-infra)
+   below for why, and for the tradeoffs of the alternative.
 
 2. Optionally group services into profiles in `config/profiles.json`:
 
@@ -67,19 +74,47 @@ Requires Node.js 20+. Works on **macOS, Linux, and Windows** (Node.js 20+).
 
 ## Commands
 
-| Command                 | Description                              |
-| ----------------------- | ---------------------------------------- |
-| `devman` / `devman start`| Start all enabled services (via daemon) |
-| `devman status`         | Show status of all services              |
-| `devman stop`           | Stop all services and the daemon         |
-| `devman restart`        | Restart all services                     |
-| `devman log <svc>`      | Stream logs for a service                |
-| `devman info <svc>`     | Show detailed info for a service         |
-| `devman doctor`         | Diagnose configuration and daemon health |
+| Command                   | Description                                                                 |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `devman` / `devman start` | Start all enabled services (via daemon)                                     |
+| `devman status`           | Show status of all services                                                 |
+| `devman stop`             | Stop all services and the daemon                                            |
+| `devman restart`          | Restart all services                                                        |
+| `devman log <svc>`        | Stream logs for a service                                                   |
+| `devman info <svc>`       | Show detailed info for a service                                            |
+| `devman doctor`           | Diagnose configuration and daemon health                                    |
+| `devman list` (`ls`)      | List every devman instance on this machine, across all `--home` directories |
 
 Global options: `--home <dir>`, `--config <dir>`, `-v, --verbose`. The
 `--profile <name>` option on `start`, `stop`, and `restart` scopes the action to
-a profile's services (a scoped `stop` leaves the daemon running).
+a profile's services (a scoped `stop` leaves the daemon running). The profile
+passed to `start` is recorded as the daemon's _active profile_ and shown by
+`status`, `doctor`, and `list` — informational only, it never affects which
+services are actually running.
+
+### Working with several projects at once
+
+Every `--home` is a fully isolated instance (its own config, logs, runtime
+dir and IPC socket) — running `devman start` in `~/code/service-a` and
+`~/code/service-b` starts two independent daemons that never interfere with
+each other, each with its own dependency graph, restart policies and
+profiles. This is the intended way to juggle several projects that each
+define their own `services.json`.
+
+The one thing that _is_ shared across projects is a small registry at
+`~/.devman/registry.json` (override with `DEVMAN_REGISTRY_FILE`), used only
+by `devman list` to answer "what's running, and where" without `cd`-ing into
+every project:
+
+```text
+$ devman list
+HOME                        PID    PROFILE  SERVICES      UPTIME
+~/code/leadsheet-monolith   17892  infra    2/4 running   1m 12s
+~/code/other-service        13768  -        2/2 running   45s
+```
+
+Losing this file is harmless — a running daemon re-registers on its next
+`start`, and `devman list` prunes any entry whose process is no longer alive.
 
 ### How process management works
 
@@ -93,15 +128,42 @@ a profile's services (a scoped `stop` leaves the daemon running).
   reaps the whole process tree (no orphaned grandchildren). On Windows, the
   process is terminated directly.
 
+### Docker and other long-lived infra
+
+`devman` has no special-cased "docker" service type — a `docker compose ...`
+entry is just a `command` like any other, supervised the same way as your
+app code. That has one real consequence worth being deliberate about:
+**`devman` only ever knows about the one process it spawned**, so what you
+put in `command`/`args` determines what `devman stop` actually stops.
+
+- `args: ["compose", "up", "postgres"]` (no `-d`) runs `docker compose up`
+  in the foreground as the supervised process. `devman stop` sends it the
+  same signal as any other service, which `docker compose up` translates
+  into `docker compose down` for you — containers stop when devman says so,
+  same as everything else. This is the pattern in the example above and the
+  one to prefer when devman should fully own the infra's lifecycle.
+- `args: ["compose", "up", "-d", "postgres"]` runs detached: the supervised
+  process exits almost immediately (successfully), so devman has nothing
+  left to watch — it can't restart a crashed container, and `devman stop`
+  won't touch it. Only reach for this if you're intentionally treating the
+  containers as pre-existing infra devman shouldn't own (e.g. a shared
+  Postgres you start once, outside any project, and just want `devman` to
+  health-check via `healthCheck: { "type": "tcp", "port": 5432 }`).
+
+Either way, pair a docker service with a `healthCheck` — a container takes
+longer to become _ready_ than to start, and without one devman reports
+`running` the moment the process spawns, not once Postgres is actually
+accepting connections.
+
 ## Platform support
 
 `devman` runs on **macOS, Linux, and Windows**. Platform-specific behaviour:
 
-| Feature | macOS / Linux | Windows |
-| --- | --- | --- |
-| IPC transport | Unix domain socket (`runtime/daemon.sock`) | Named pipe (`\\.\pipe\devman-<hex>`) |
+| Feature       | macOS / Linux                                       | Windows                                  |
+| ------------- | --------------------------------------------------- | ---------------------------------------- |
+| IPC transport | Unix domain socket (`runtime/daemon.sock`)          | Named pipe (`\\.\pipe\devman-<hex>`)     |
 | Process group | `detached: true` + signal `-pid` (reaps whole tree) | Direct child kill via `TerminateProcess` |
-| Daemon spawn | Fully detached (`unref()`) | Fully detached (`unref()`) |
+| Daemon spawn  | Fully detached (`unref()`)                          | Fully detached (`unref()`)               |
 
 ## Configuration
 

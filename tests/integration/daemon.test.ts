@@ -40,7 +40,12 @@ describe('Daemon over IPC', () => {
   it('serves ping, status and shutdown', async () => {
     const paths = resolvePaths({ home: dir, env: {} });
     const config = await loadConfig(paths);
-    daemon = new Daemon({ paths, config, logger: new NullLogger() });
+    daemon = new Daemon({
+      paths,
+      config,
+      logger: new NullLogger(),
+      registryFile: join(dir, 'registry.json'),
+    });
     await daemon.start();
 
     // A live pid file is written on start.
@@ -70,7 +75,12 @@ describe('Daemon over IPC', () => {
   it('rejects unknown methods', async () => {
     const paths = resolvePaths({ home: dir, env: {} });
     const config = await loadConfig(paths);
-    daemon = new Daemon({ paths, config, logger: new NullLogger() });
+    daemon = new Daemon({
+      paths,
+      config,
+      logger: new NullLogger(),
+      registryFile: join(dir, 'registry.json'),
+    });
     await daemon.start();
 
     const client = await IpcClient.connect(

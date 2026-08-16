@@ -11,10 +11,7 @@ import type { ServiceDefinition } from '../../src/types/service.js';
 import { delay } from '../../src/utils/time.js';
 
 /** Build a minimal ServiceDefinition backed by a Node.js one-liner. */
-function makeService(
-  nodeScript: string,
-  id = 'test',
-): ServiceDefinition {
+function makeService(nodeScript: string, id = 'test'): ServiceDefinition {
   return {
     id,
     name: id,

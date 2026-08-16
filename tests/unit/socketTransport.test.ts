@@ -125,7 +125,11 @@ describe('SocketServerTransport + SocketClientTransport round-trip', () => {
     await new Promise<void>((r) => setTimeout(r, 100));
 
     expect(received).toHaveLength(1);
-    expect(received[0]).toMatchObject({ id: 1, kind: 'request', method: 'ping' });
+    expect(received[0]).toMatchObject({
+      id: 1,
+      kind: 'request',
+      method: 'ping',
+    });
 
     conn.close();
     await server.close();
@@ -201,7 +205,12 @@ describe('SocketServerTransport + SocketClientTransport round-trip', () => {
     const c1 = await new SocketClientTransport(addr).connect();
     const c2 = await new SocketClientTransport(addr).connect();
 
-    const ping: IpcMessage = { id: 1, kind: 'request', method: 'ping', params: {} };
+    const ping: IpcMessage = {
+      id: 1,
+      kind: 'request',
+      method: 'ping',
+      params: {},
+    };
     await c1.send(ping);
     await c2.send(ping);
     await new Promise<void>((r) => setTimeout(r, 150));

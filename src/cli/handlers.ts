@@ -9,10 +9,21 @@ import ora from 'ora';
 import { loadConfig } from '../config/loader.js';
 import { pathExists } from '../utils/fs.js';
 import { now } from '../utils/time.js';
-import { ensureDaemon, pingDaemon } from '../daemon/bootstrap.js';
+import { ensureDaemon, fetchStatus, pingDaemon } from '../daemon/bootstrap.js';
+import { isProcessAlive } from '../daemon/pidfile.js';
+import {
+  readRegistry,
+  registryFilePath,
+  removeRegistryEntry,
+} from '../config/registry.js';
 import { callDaemon, withDaemon } from './daemonClient.js';
 import { printInfo, printSuccess } from './render.js';
-import { renderServiceInfo, renderStatusTable } from '../ui/statusTable.js';
+import {
+  renderRegistryTable,
+  renderServiceInfo,
+  renderStatusTable,
+  type RegistryRow,
+} from '../ui/statusTable.js';
 import { ServiceStartFailedError } from '../utils/errors.js';
 import type { CliContext } from './context.js';
 import type {
@@ -40,16 +51,18 @@ function notRunning(services: readonly ServiceRuntime[]): string[] {
 
 /**
  * Resolve the `--profile` option to explicit service ids by consulting the
- * configuration. Returns `undefined` when no profile is given, letting the
- * daemon apply its default (all enabled services).
+ * configuration. Returns `undefined` ids when no profile is given, letting
+ * the daemon apply its default (all enabled services). The profile name
+ * itself is passed through alongside the resolved ids, purely so the daemon
+ * can record it as the "active profile" for `status`/`doctor`/`list`.
  */
 async function resolveSelector(
   ctx: CliContext,
   profile: string | undefined,
-): Promise<{ ids?: string[] }> {
+): Promise<{ ids?: string[]; profile?: string }> {
   if (!profile) return {};
   const config = await loadConfig(ctx.paths);
-  return { ids: config.resolveProfile(profile) };
+  return { ids: config.resolveProfile(profile), profile };
 }
 
 async function showStatus(
@@ -60,6 +73,9 @@ async function showStatus(
   if (options.json) {
     process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
     return;
+  }
+  if (state.activeProfile) {
+    printInfo(`profile: ${state.activeProfile}`);
   }
   process.stdout.write(`${renderStatusTable(state, now())}\n`);
 }
@@ -244,9 +260,70 @@ async function runDoctor(ctx: CliContext): Promise<void> {
   const ping = await pingDaemon(paths);
   if (ping) {
     printSuccess(`Daemon running (pid ${ping.daemonPid}, v${ping.version}).`);
+    const state = await fetchStatus(paths.socketPath);
+    if (state) {
+      const running = Object.values(state.services).filter(
+        (s) => s.status === 'running',
+      ).length;
+      const total = Object.values(state.services).length;
+      printInfo(`profile: ${state.activeProfile ?? '-'}`);
+      printInfo(`services: ${running}/${total} running`);
+    }
   } else {
     printInfo('Daemon is not running. Run `devman start` to start it.');
   }
+}
+
+/**
+ * List every devman daemon registered on this machine (see
+ * `config/registry.ts`), regardless of the current `--home`/cwd. This is the
+ * one command that answers "what's running, and where" without cd-ing into
+ * each project — everything else is scoped to a single `--home`.
+ */
+async function listInstances(
+  _ctx: CliContext,
+  options: JsonOptions = {},
+): Promise<void> {
+  const regPath = registryFilePath();
+  const entries = await readRegistry(regPath);
+  const rows: RegistryRow[] = [];
+
+  for (const entry of entries) {
+    if (!isProcessAlive(entry.pid)) {
+      // Crashed or killed without a graceful shutdown — prune the stale
+      // entry so it doesn't keep showing up.
+      await removeRegistryEntry(regPath, entry.home).catch(() => {});
+      continue;
+    }
+
+    const state = await fetchStatus(entry.socketPath);
+    if (!state) {
+      rows.push({ home: entry.home, pid: entry.pid, reachable: false });
+      continue;
+    }
+    const services = Object.values(state.services);
+    rows.push({
+      home: entry.home,
+      pid: entry.pid,
+      reachable: true,
+      activeProfile: state.activeProfile,
+      running: services.filter((s) => s.status === 'running').length,
+      total: services.length,
+      startedAt: state.daemonStartedAt,
+    });
+  }
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
+    return;
+  }
+  if (rows.length === 0) {
+    printInfo(
+      'No devman instances running. Run `devman start` in a project to register one.',
+    );
+    return;
+  }
+  process.stdout.write(`${renderRegistryTable(rows, now())}\n`);
 }
 
 /** Production command handlers. */
@@ -258,4 +335,5 @@ export const handlers: CommandHandlers = {
   log: streamLogs,
   info: showInfo,
   doctor: runDoctor,
+  list: listInstances,
 };

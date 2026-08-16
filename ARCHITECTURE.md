@@ -10,7 +10,7 @@ can be started, watched and torn down from one place.
 ## Status
 
 Feature-complete for Phases 1–5. All commands are implemented and tested:
-`start`, `status`, `stop`, `restart`, `log`, `info`, `doctor`, with
+`start`, `status`, `stop`, `restart`, `log`, `info`, `doctor`, `list`, with
 `--profile` scoping. Cross-platform: macOS, Linux, Windows (Node.js 20+).
 
 ## High-Level Architecture
@@ -101,7 +101,10 @@ socket at `runtime/daemon.sock` on macOS/Linux and a named pipe
 (`\\.\pipe\devman-<hex>`) on Windows (`socketTransport.ts`).
 
 Methods: `ping`, `status`, `start`, `stop`, `restart`, `info`, `logs`,
-`shutdown`.
+`shutdown`. `start`/`stop` accept an optional `profile` name alongside the
+resolved service `ids` (the CLI resolves the profile client-side; the name
+travels along purely so the daemon can record it — see "active profile"
+below).
 
 ### Process Manager (`src/process/`)
 
@@ -142,7 +145,15 @@ Methods: `ping`, `status`, `start`, `stop`, `restart`, `info`, `logs`,
 `services.json`/`profiles.json` and exposes `resolveProfile(name)`.
 `validate.ts` enforces schema, unique ids, and defers dependency-cycle
 detection to the dependency graph. No paths or services are hardcoded —
-`devman` is generic for any project.
+`devman` is generic for any project. `registry.ts` is the one piece of
+_cross_-`--home` state: a small, best-effort JSON index at
+`~/.devman/registry.json` (override: `DEVMAN_REGISTRY_FILE`) that every
+daemon upserts itself into on `start` and removes itself from on graceful
+`shutdown`, purely so `devman list` can answer "what's running, and where"
+without needing to stand inside each project. It's read-modify-write with no
+cross-process locking — acceptable because it's self-healing: `devman list`
+prunes any entry whose pid is dead, and a daemon that drops out on a lost
+write just re-registers on its next `start`.
 
 ### Logging (`src/logging/`)
 
@@ -173,7 +184,7 @@ platform-safe helpers.
 Each service definition:
 
 | Field         | Type     | Default       | Notes                                     |
-| ------------- | -------- | ------------- | ------------------------------------------ |
+| ------------- | -------- | ------------- | ----------------------------------------- |
 | `id`          | string   | —             | Required, unique                          |
 | `name`        | string   | `id`          | Display name                              |
 | `cwd`         | string   | `.`           | Resolved relative to the config base      |
@@ -191,6 +202,18 @@ Named groups of service ids (e.g. `backend`, `frontend`, `full`) used by
 `--profile` to scope `start`/`stop`/`restart` to a subset. A scoped `stop`
 stops only that profile's services and leaves the daemon running; a bare
 `stop` stops everything and shuts the daemon down.
+
+### Active profile
+
+`RuntimeState.activeProfile` records the name passed to the most recent
+`start` (`null` for an unscoped start, or before any start). It's purely
+informational — `RuntimeState.services` is always the source of truth for
+what's actually running — but it's what lets `status`, `doctor`, and `list`
+answer "which profile is this?" without the user having to remember which
+flag they used. Every `start` overwrites it (to the given profile, or `null`
+for an unscoped start); a scoped `stop` clears it back to `null`, but only
+when it targets exactly the profile that's currently recorded — stopping
+some other profile leaves it as-is.
 
 ## Lifecycle
 
@@ -211,13 +234,38 @@ Errors cross the IPC boundary as `IpcErrorPayload` and are re-rendered as
 the same friendly block as one raised locally in the CLI (see
 [UI-UX.md](./UI-UX.md#errors)).
 
+Beyond per-call error handling, the daemon entry point (`src/daemon/index.ts`)
+installs a last-resort `uncaughtException`/`unhandledRejection` handler that
+logs and lets the daemon keep running. It's specifically there because the
+daemon is a fully detached background process supervising every service on
+the host — an isolated bug in some rarely-hit path must not silently take
+the whole stack down with it. It's a net, not a substitute for handling
+errors at the source: `RuntimeStateStore.persist()` is the concrete example
+that motivated it (see below) and is fixed at the source too.
+
+### Runtime-state persistence is serialised, not fire-and-forget
+
+`RuntimeStateStore` writes the whole `RuntimeState` document to
+`state.json` via write-temp-then-rename on every `updateService` call.
+Two services changing state in the same tick (two health checks resolving
+together, several services finishing startup close together) used to issue
+overlapping renames onto that one destination — safe on POSIX (atomic
+`rename(2)`), but Windows can throw `EPERM`/`EBUSY` when the destination is
+momentarily held by another handle. `persist()` now queues writes so renames
+onto `stateFile` are strictly serialised, `writeJsonFileAtomic` retries a
+transient `EPERM`/`EBUSY` with backoff as a second line of defense, and the
+health-checker callback (previously `void`-fire-and-forget) now awaits and
+logs instead of letting a rejection there crash the process uncaught.
+
 ## Testing
 
 - `tests/unit/` — pure logic: codec, dependency graph, health checker,
-  managed process, paths, pidfile, service logger, socket transport, state,
-  validation.
+  managed process, paths, pidfile, registry, service logger, socket
+  transport, state, validation.
 - `tests/integration/` — daemon end-to-end (spawn, IPC round-trip, shutdown),
-  health probes against real sockets/HTTP, process manager orchestration.
+  the active-profile IPC round-trip, the instance registry across multiple
+  daemons, health probes against real sockets/HTTP, process manager
+  orchestration.
 
 ## Future Roadmap
 
@@ -226,3 +274,11 @@ the same friendly block as one raised locally in the CLI (see
 - Plugin system
 - Notifications
 - Metrics / log rotation
+- Considered and deferred: a first-class `docker-compose` service type with
+  its own start/stop hooks (`up -d` / `down`) instead of treating it as a
+  plain foreground `command`. Not implemented because it needs a real Docker
+  daemon to validate the hook behaviour against, which wasn't available
+  where this was scoped; see the README's "Docker and other long-lived
+  infra" section for the documented workaround (run `docker compose up`
+  _without_ `-d` as the supervised process, so devman's normal stop signal
+  already maps onto `docker compose down`).

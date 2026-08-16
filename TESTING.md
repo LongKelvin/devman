@@ -146,43 +146,43 @@ Chạy từ trong từng thư mục `--home` tương ứng. Đặt biến cho g�
 DEVMAN="node /path/to/devman/dist/cli/index.js"
 ```
 
-| Lệnh | Kỳ vọng |
-| --- | --- |
-| `$DEVMAN doctor` (chưa start) | In home/config/logs/runtime/socket, xác nhận config hợp lệ, báo daemon chưa chạy |
-| `$DEVMAN start` | Spawn daemon, start service theo đúng thứ tự `dependsOn`, in bảng `running` |
-| `$DEVMAN status` | Bảng khớp với `start`, `UPTIME` tăng dần |
-| `$DEVMAN info <id>` | Bảng chi tiết: PID, Started, Health,... |
-| `$DEVMAN info <id-không-tồn-tại>` | Exit `1`, có `hint:` |
-| `$DEVMAN log <id>` | Stream log có timestamp + tag `OUT`/`ERR`, real-time |
-| `$DEVMAN log <id> --no-follow --tail 3` | In 3 dòng cuối rồi **thoát ngay**, không treo |
-| `$DEVMAN status --json` / `info <id> --json` | JSON hợp lệ, parse được bằng `jq`/`JSON.parse` |
-| `$DEVMAN restart --profile <p>` | Chỉ service trong profile bị restart, PID đổi |
-| `$DEVMAN stop --profile <p>` | Service trong profile dừng, **daemon vẫn chạy** (`doctor` vẫn thấy daemon) |
-| `$DEVMAN stop` (không profile) | Toàn bộ service + daemon dừng |
-| `$DEVMAN stop` (gọi lần 2) | Exit `0`, in "Daemon is not running." — không lỗi |
-| `$DEVMAN status` (daemon đã dừng) | Exit `1`, `DAEMON_NOT_RUNNING` + hint `devman start` |
-| `$DEVMAN --home ./happy doctor` (chạy từ thư mục khác) | Vẫn resolve đúng home |
-| `$DEVMAN -v doctor` | Có thêm log debug |
+| Lệnh                                                   | Kỳ vọng                                                                          |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `$DEVMAN doctor` (chưa start)                          | In home/config/logs/runtime/socket, xác nhận config hợp lệ, báo daemon chưa chạy |
+| `$DEVMAN start`                                        | Spawn daemon, start service theo đúng thứ tự `dependsOn`, in bảng `running`      |
+| `$DEVMAN status`                                       | Bảng khớp với `start`, `UPTIME` tăng dần                                         |
+| `$DEVMAN info <id>`                                    | Bảng chi tiết: PID, Started, Health,...                                          |
+| `$DEVMAN info <id-không-tồn-tại>`                      | Exit `1`, có `hint:`                                                             |
+| `$DEVMAN log <id>`                                     | Stream log có timestamp + tag `OUT`/`ERR`, real-time                             |
+| `$DEVMAN log <id> --no-follow --tail 3`                | In 3 dòng cuối rồi **thoát ngay**, không treo                                    |
+| `$DEVMAN status --json` / `info <id> --json`           | JSON hợp lệ, parse được bằng `jq`/`JSON.parse`                                   |
+| `$DEVMAN restart --profile <p>`                        | Chỉ service trong profile bị restart, PID đổi                                    |
+| `$DEVMAN stop --profile <p>`                           | Service trong profile dừng, **daemon vẫn chạy** (`doctor` vẫn thấy daemon)       |
+| `$DEVMAN stop` (không profile)                         | Toàn bộ service + daemon dừng                                                    |
+| `$DEVMAN stop` (gọi lần 2)                             | Exit `0`, in "Daemon is not running." — không lỗi                                |
+| `$DEVMAN status` (daemon đã dừng)                      | Exit `1`, `DAEMON_NOT_RUNNING` + hint `devman start`                             |
+| `$DEVMAN --home ./happy doctor` (chạy từ thư mục khác) | Vẫn resolve đúng home                                                            |
+| `$DEVMAN -v doctor`                                    | Có thêm log debug                                                                |
 
 ## 4. Checklist các trường hợp lỗi / cấu hình sai
 
 Đây là nhóm quan trọng nhất để bắt regression — tạo riêng một `--home` cho
 mỗi case:
 
-| Case | `services.json` | Kỳ vọng |
-| --- | --- | --- |
-| Dependency cycle | `a` dependsOn `b`, `b` dependsOn `a` | `devman doctor` **phải báo lỗi ngay** (`DEPENDENCY_CYCLE`) — không chờ tới `start` |
-| Dependency thiếu | `a` dependsOn `ghost` (không tồn tại) | `doctor` báo `DEPENDENCY_MISSING`, có hint |
-| Duplicate id | Hai service cùng `id` | `doctor` báo lỗi trùng id |
-| JSON sai cú pháp | Thiếu dấu `"` quanh key | `doctor` báo lỗi **có hint**, exit `1` (không phải raw `SyntaxError` exit `2`) |
-| Command không tồn tại | `"command": "khong-ton-tai-xyz"` | `devman start` phải **exit 1**, in `✖ Started 0/1...`, bảng status hiện `failed` (không phải `running` giả) |
-| `cwd` không tồn tại | `"cwd": "./khong-co-thu-muc"` | Tương tự — exit 1, không báo thành công giả |
-| `restart.policy: "no"` | dùng `crash.js` | Sau khi crash: `status: failed`, `restarts: 0`, **không** tự khởi động lại |
-| `restart.policy: "on-failure", maxRetries: 2` | dùng `crash.js` | Thử lại đúng 2 lần rồi dừng ở `failed`, `restarts: 2` |
-| `restart.policy: "always"` | dùng `clean-exit.js` | Vẫn tự khởi động lại dù exit code là 0 |
-| `healthCheck: {type: "tcp", port}` | dùng `tcp-server.js` | `unhealthy` → `healthy` sau khi server mở port |
-| `healthCheck: {type: "http", url}` | dùng `http-server.js` | Tương tự, dựa trên status HTTP 2xx/3xx |
-| `healthCheck: {type: "tcp"}` (thiếu `port`) | bất kỳ | Tự "hạ cấp" về probe kiểu `process` — vẫn `healthy` nếu process đang chạy, không throw |
+| Case                                          | `services.json`                       | Kỳ vọng                                                                                                     |
+| --------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Dependency cycle                              | `a` dependsOn `b`, `b` dependsOn `a`  | `devman doctor` **phải báo lỗi ngay** (`DEPENDENCY_CYCLE`) — không chờ tới `start`                          |
+| Dependency thiếu                              | `a` dependsOn `ghost` (không tồn tại) | `doctor` báo `DEPENDENCY_MISSING`, có hint                                                                  |
+| Duplicate id                                  | Hai service cùng `id`                 | `doctor` báo lỗi trùng id                                                                                   |
+| JSON sai cú pháp                              | Thiếu dấu `"` quanh key               | `doctor` báo lỗi **có hint**, exit `1` (không phải raw `SyntaxError` exit `2`)                              |
+| Command không tồn tại                         | `"command": "khong-ton-tai-xyz"`      | `devman start` phải **exit 1**, in `✖ Started 0/1...`, bảng status hiện `failed` (không phải `running` giả) |
+| `cwd` không tồn tại                           | `"cwd": "./khong-co-thu-muc"`         | Tương tự — exit 1, không báo thành công giả                                                                 |
+| `restart.policy: "no"`                        | dùng `crash.js`                       | Sau khi crash: `status: failed`, `restarts: 0`, **không** tự khởi động lại                                  |
+| `restart.policy: "on-failure", maxRetries: 2` | dùng `crash.js`                       | Thử lại đúng 2 lần rồi dừng ở `failed`, `restarts: 2`                                                       |
+| `restart.policy: "always"`                    | dùng `clean-exit.js`                  | Vẫn tự khởi động lại dù exit code là 0                                                                      |
+| `healthCheck: {type: "tcp", port}`            | dùng `tcp-server.js`                  | `unhealthy` → `healthy` sau khi server mở port                                                              |
+| `healthCheck: {type: "http", url}`            | dùng `http-server.js`                 | Tương tự, dựa trên status HTTP 2xx/3xx                                                                      |
+| `healthCheck: {type: "tcp"}` (thiếu `port`)   | bất kỳ                                | Tự "hạ cấp" về probe kiểu `process` — vẫn `healthy` nếu process đang chạy, không throw                      |
 
 ## 5. Kiểm tra riêng cho Windows
 

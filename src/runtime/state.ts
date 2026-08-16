@@ -49,6 +49,14 @@ export type ServiceRuntimePatch = Partial<Omit<ServiceRuntime, 'id'>>;
  */
 export class RuntimeStateStore {
   private state: RuntimeState;
+  /**
+   * Tail of the write queue. Every `persist()` chains onto this so writes to
+   * `stateFile` are strictly serialised — without it, two services changing
+   * state close together (e.g. two health checks resolving in the same
+   * event-loop tick) issue overlapping `rename`s onto the same destination,
+   * which is not safe on Windows (see `writeJsonFileAtomic`).
+   */
+  private writeQueue: Promise<void> = Promise.resolve();
 
   private constructor(
     private readonly stateFile: string,
@@ -68,6 +76,7 @@ export class RuntimeStateStore {
       daemonPid: init.daemonPid,
       daemonStartedAt: init.daemonStartedAt,
       socketPath: init.socketPath,
+      activeProfile: null,
       services,
     };
     return new RuntimeStateStore(init.stateFile, state);
@@ -112,8 +121,28 @@ export class RuntimeStateStore {
     await this.persist();
   }
 
-  private async persist(): Promise<void> {
-    await writeJsonFileAtomic(this.stateFile, this.state);
+  /**
+   * Record which named profile the most recent `start` targeted (`null` for
+   * an unscoped start). Purely informational — surfaced by `status`/`doctor`
+   * so a project with several profiles doesn't leave the user guessing which
+   * one is currently up.
+   */
+  async setActiveProfile(profile: string | null): Promise<void> {
+    this.state = { ...this.state, activeProfile: profile };
+    await this.persist();
+  }
+
+  /**
+   * Persist the current in-memory state, queued behind any write already in
+   * flight. Each caller still awaits exactly its own write (and sees its own
+   * rejection); a failed write doesn't block the ones queued after it.
+   */
+  private persist(): Promise<void> {
+    const write = this.writeQueue.then(() =>
+      writeJsonFileAtomic(this.stateFile, this.state),
+    );
+    this.writeQueue = write.catch(() => undefined);
+    return write;
   }
 }
 

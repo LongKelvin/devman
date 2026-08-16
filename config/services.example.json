@@ -37,6 +37,11 @@
         "policy": "always",
         "maxRetries": 10,
         "delayMs": 2000
+      },
+      "healthCheck": {
+        "type": "tcp",
+        "port": 5432,
+        "intervalMs": 5000
       }
     },
     {

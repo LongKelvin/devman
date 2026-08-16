@@ -67,7 +67,9 @@ export class ManagedProcess {
       throw new DevmanError(
         'PROCESS_START_FAILED',
         `Working directory not found for "${this.service.id}": ${cwd}`,
-        { hint: `Check the "cwd" setting for ${this.service.id} in services.json.` },
+        {
+          hint: `Check the "cwd" setting for ${this.service.id} in services.json.`,
+        },
       );
     }
     const options: Options = {
