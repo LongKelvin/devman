@@ -274,3 +274,11 @@ logs instead of letting a rejection there crash the process uncaught.
 - Plugin system
 - Notifications
 - Metrics / log rotation
+- Considered and deferred: a first-class `docker-compose` service type with
+  its own start/stop hooks (`up -d` / `down`) instead of treating it as a
+  plain foreground `command`. Not implemented because it needs a real Docker
+  daemon to validate the hook behaviour against, which wasn't available
+  where this was scoped; see the README's "Docker and other long-lived
+  infra" section for the documented workaround (run `docker compose up`
+  _without_ `-d` as the supervised process, so devman's normal stop signal
+  already maps onto `docker compose down`).

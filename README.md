@@ -48,11 +48,17 @@ Requires Node.js 20+. Works on **macOS, Linux, and Windows** (Node.js 20+).
        {
          "id": "db",
          "command": "docker",
-         "args": ["compose", "up", "postgres"]
+         "args": ["compose", "up", "postgres"],
+         "healthCheck": { "type": "tcp", "port": 5432 }
        }
      ]
    }
    ```
+
+   Note the missing `-d`/`--detach`: this deliberately runs `docker compose
+up` in the _foreground_, as the process devman itself supervises — see
+   [Docker and other long-lived infra](#docker-and-other-long-lived-infra)
+   below for why, and for the tradeoffs of the alternative.
 
 2. Optionally group services into profiles in `config/profiles.json`:
 
@@ -121,6 +127,33 @@ Losing this file is harmless — a running daemon re-registers on its next
 - Each service runs in its own process group (on macOS/Linux), so stopping it
   reaps the whole process tree (no orphaned grandchildren). On Windows, the
   process is terminated directly.
+
+### Docker and other long-lived infra
+
+`devman` has no special-cased "docker" service type — a `docker compose ...`
+entry is just a `command` like any other, supervised the same way as your
+app code. That has one real consequence worth being deliberate about:
+**`devman` only ever knows about the one process it spawned**, so what you
+put in `command`/`args` determines what `devman stop` actually stops.
+
+- `args: ["compose", "up", "postgres"]` (no `-d`) runs `docker compose up`
+  in the foreground as the supervised process. `devman stop` sends it the
+  same signal as any other service, which `docker compose up` translates
+  into `docker compose down` for you — containers stop when devman says so,
+  same as everything else. This is the pattern in the example above and the
+  one to prefer when devman should fully own the infra's lifecycle.
+- `args: ["compose", "up", "-d", "postgres"]` runs detached: the supervised
+  process exits almost immediately (successfully), so devman has nothing
+  left to watch — it can't restart a crashed container, and `devman stop`
+  won't touch it. Only reach for this if you're intentionally treating the
+  containers as pre-existing infra devman shouldn't own (e.g. a shared
+  Postgres you start once, outside any project, and just want `devman` to
+  health-check via `healthCheck: { "type": "tcp", "port": 5432 }`).
+
+Either way, pair a docker service with a `healthCheck` — a container takes
+longer to become _ready_ than to start, and without one devman reports
+`running` the moment the process spawns, not once Postgres is actually
+accepting connections.
 
 ## Platform support
 
